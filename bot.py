@@ -24,7 +24,7 @@ def run_web():
     app.run(host='0.0.0.0', port=port)
 
 # Bot Configuration
-TOKEN = '8666711380:AAFZlyF9tDeVpUQl_jED3OxNPm-creeWExo'
+TOKEN = '8666711380:AAHGASO6jcd6Iqeb0sy9E9BewZz6S9eam-A'
 CHANNEL_USERNAME = '@taandob7'  # আপনার আসল চ্যানেল এখানে সেট করা আছে
 ADMIN_ID = 8702921423
 BOT_USERNAME = 'TasklyX_BD_Bot'
