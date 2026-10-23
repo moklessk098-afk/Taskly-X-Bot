@@ -490,13 +490,17 @@ def start(message):
         return
 
     name = message.from_user.first_name or "User"
+    
+    # চেক করা হচ্ছে ব্যবহারকারী একদম নতুন কি না
+    is_new_user = user_id not in users
     u_data = get_user_data(user_id, name)
 
     args = message.text.split()
-    if len(args) > 1 and args[1].startswith('ref_'):
+    # শুধুমাত্র নতুন ইউজার হলে এবং আগে কোনো referrer সেট না থাকলে তবেই রেফার কাউন্ট হবে
+    if is_new_user and len(args) > 1 and args[1].startswith('ref_'):
         try:
             ref_id = int(args[1].replace('ref_', ''))
-            if ref_id != user_id and ref_id in users and 'referred_by' not in u_data:
+            if ref_id != user_id and ref_id in users and not u_data.get('referred_by'):
                 u_data['referred_by'] = ref_id
                 ref_user = get_user_data(ref_id)
                 ref_user['referral_count'] = ref_user.get('referral_count', 0) + 1
@@ -505,7 +509,7 @@ def start(message):
                 ref_user['referrals_list'].append({'uid': user_id, 'time': time.time()})
                 
                 try:
-                    bot.send_message(ref_id, f"👥 A new member joined from your referral link: {name}")
+                    bot.send_message(ref_id, f"👥 **Referral Notification!**\nA new member joined from your referral link: {name}")
                 except Exception:
                     pass
         except Exception:
