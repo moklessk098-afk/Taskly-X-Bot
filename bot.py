@@ -25,7 +25,7 @@ def run_web():
 
 # Bot Configuration
 TOKEN = '8666711380:AAFZlyF9tDeVpUQl_jED3OxNPm-creeWExo'
-CHANNEL_USERNAME = '@taandob7'
+CHANNEL_USERNAME = '@taandob7'  # আপনার আসল চ্যানেল এখানে সেট করা আছে
 ADMIN_ID = 8702921423
 BOT_USERNAME = 'TasklyX_BD_Bot'
 
@@ -491,12 +491,10 @@ def start(message):
 
     name = message.from_user.first_name or "User"
     
-    # চেক করা হচ্ছে ব্যবহারকারী একদম নতুন কি না
     is_new_user = user_id not in users
     u_data = get_user_data(user_id, name)
 
     args = message.text.split()
-    # শুধুমাত্র নতুন ইউজার হলে এবং আগে কোনো referrer সেট না থাকলে তবেই রেফার কাউন্ট হবে
     if is_new_user and len(args) > 1 and args[1].startswith('ref_'):
         try:
             ref_id = int(args[1].replace('ref_', ''))
