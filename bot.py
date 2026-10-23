@@ -11,7 +11,6 @@ import openpyxl
 import threading
 import os
 from flask import Flask
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
 # ফ্লাস্ক সার্ভার (24/7 রানিং রাখার জন্য)
 app = Flask('')
@@ -30,7 +29,7 @@ CHANNEL_USERNAME = '@taandob7'
 ADMIN_ID = 8702921423
 BOT_USERNAME = 'TasklyX_BD_Bot'
 
-bot = telebot.TeleBot(TOKEN)
+bot = telebot.TeleBot(TOKEN, parse_mode=None)
 
 # Dynamic Settings
 SETTINGS = {
@@ -94,7 +93,7 @@ def get_user_data(user_id, name="User"):
             'completed_tasks': 0,
             'referral_count': 0,
             'ref_earned': 0.0,
-            'referrals_list': [] # list of dicts: {'uid': 123, 'time': timestamp}
+            'referrals_list': []
         }
     return users[user_id]
 
@@ -106,64 +105,64 @@ def is_subscribed(user_id):
         return False
 
 def main_keyboard(user_id):
-    markup = ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row(KeyboardButton("💰 Balance"), KeyboardButton("📋 Tasks"))
-    markup.row(KeyboardButton("📤 Withdraw"), KeyboardButton("👤 Profile"))
-    markup.row(KeyboardButton("🏆 Top Leaderboard"), KeyboardButton("👥 Referral"))
-    markup.row(KeyboardButton("🎬 Video Tutorial"))
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row(telebot.types.KeyboardButton("💰 Balance"), telebot.types.KeyboardButton("📋 Tasks"))
+    markup.row(telebot.types.KeyboardButton("📤 Withdraw"), telebot.types.KeyboardButton("👤 Profile"))
+    markup.row(telebot.types.KeyboardButton("🏆 Top Leaderboard"), telebot.types.KeyboardButton("👥 Referral"))
+    markup.row(telebot.types.KeyboardButton("🎬 Video Tutorial"))
     if user_id == ADMIN_ID:
-        markup.row(KeyboardButton("👑 Admin Panel"))
+        markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
     return markup
 
 def tasks_keyboard():
-    markup = ReplyKeyboardMarkup(resize_keyboard=True)
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     r_token = SETTINGS['reward_tw_token']
     r_2fa = SETTINGS['reward_tw_2fa']
     t1_name = SETTINGS['task1_name']
     t2_name = SETTINGS['task2_name']
 
     if SETTINGS.get('tw_token_enabled', True):
-        markup.row(KeyboardButton(f"🐦 {t1_name} (${r_token:.4f})"))
+        markup.row(telebot.types.KeyboardButton(f"🐦 {t1_name} (${r_token:.4f})"))
     if SETTINGS.get('tw_2fa_enabled', True):
-        markup.row(KeyboardButton(f"🔥 {t2_name} (${r_2fa:.4f})"))
-    markup.row(KeyboardButton("❌ Cancel"))
+        markup.row(telebot.types.KeyboardButton(f"🔥 {t2_name} (${r_2fa:.4f})"))
+    markup.row(telebot.types.KeyboardButton("❌ Cancel"))
     return markup
 
 def admin_panel_keyboard():
-    markup = ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row(KeyboardButton("📋 Pending Accounts"), KeyboardButton("📤 Withdraw Requests"))
-    markup.row(KeyboardButton("🏆 Top Control"), KeyboardButton("🔍 Search UID/Username"))
-    markup.row(KeyboardButton("⚡ Batch Approve / Percentage"), KeyboardButton("🛠️ Task Control"))
-    markup.row(KeyboardButton("💰 Change Price"), KeyboardButton("✏️ Change Task Names"))
-    markup.row(KeyboardButton("🔐 Password Management"), KeyboardButton("⚙️ Payment Methods"))
-    markup.row(KeyboardButton("👥 Referral Management"), KeyboardButton("👥 User Management"))
-    markup.row(KeyboardButton("📢 Broadcast Message"), KeyboardButton("🎬 Video Management"))
-    markup.row(KeyboardButton("📊 Task 1 Excel"), KeyboardButton("📊 Task 2 Excel (2FA)"))
-    markup.row(KeyboardButton("🔍 Check Accounts via Username"), KeyboardButton("📥 Custom Username Check"))
-    markup.row(KeyboardButton("🏠 Main Menu"))
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row(telebot.types.KeyboardButton("📋 Pending Accounts"), telebot.types.KeyboardButton("📤 Withdraw Requests"))
+    markup.row(telebot.types.KeyboardButton("🏆 Top Control"), telebot.types.KeyboardButton("🔍 Search UID/Username"))
+    markup.row(telebot.types.KeyboardButton("⚡ Batch Approve / Percentage"), telebot.types.KeyboardButton("🛠️ Task Control"))
+    markup.row(telebot.types.KeyboardButton("💰 Change Price"), telebot.types.KeyboardButton("✏️ Change Task Names"))
+    markup.row(telebot.types.KeyboardButton("🔐 Password Management"), telebot.types.KeyboardButton("⚙️ Payment Methods"))
+    markup.row(telebot.types.KeyboardButton("👥 Referral Management"), telebot.types.KeyboardButton("👥 User Management"))
+    markup.row(telebot.types.KeyboardButton("📢 Broadcast Message"), telebot.types.KeyboardButton("🎬 Video Management"))
+    markup.row(telebot.types.KeyboardButton("📊 Task 1 Excel"), telebot.types.KeyboardButton("📊 Task 2 Excel (2FA)"))
+    markup.row(telebot.types.KeyboardButton("🔍 Check Accounts via Username"), telebot.types.KeyboardButton("📥 Custom Username Check"))
+    markup.row(telebot.types.KeyboardButton("🏠 Main Menu"))
     return markup
 
 def batch_panel_keyboard():
-    markup = ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row(KeyboardButton("✅ Batch Approve Usernames"), KeyboardButton("❌ Batch Reject Usernames"))
-    markup.row(KeyboardButton("📊 Percentage Auto Process"))
-    markup.row(KeyboardButton("👑 Admin Panel"))
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row(telebot.types.KeyboardButton("✅ Batch Approve Usernames"), telebot.types.KeyboardButton("❌ Batch Reject Usernames"))
+    markup.row(telebot.types.KeyboardButton("📊 Percentage Auto Process"))
+    markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
     return markup
 
 def excel_task1_menu():
-    markup = ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row(KeyboardButton("📊 Download Excel: Task 1"), KeyboardButton("🗑️ Delete Task 1 Accounts"))
-    markup.row(KeyboardButton("👑 Admin Panel"))
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row(telebot.types.KeyboardButton("📊 Download Excel: Task 1"), telebot.types.KeyboardButton("🗑️ Delete Task 1 Accounts"))
+    markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
     return markup
 
 def excel_2fa_menu():
-    markup = ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row(KeyboardButton("📊 Download Excel: 2FA"), KeyboardButton("🗑️ Delete 2FA Accounts"))
-    markup.row(KeyboardButton("👑 Admin Panel"))
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row(telebot.types.KeyboardButton("📊 Download Excel: 2FA"), telebot.types.KeyboardButton("🗑️ Delete 2FA Accounts"))
+    markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
     return markup
 
 def password_mgmt_keyboard():
-    markup = ReplyKeyboardMarkup(resize_keyboard=True)
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     mode = SETTINGS.get('pwd_mode', 'random')
     m_rand = "✅ Random" if mode == 'random' else "Random"
     m_rand_date = "✅ Random + Date" if mode == 'random_date' else "Random + Date"
@@ -172,22 +171,22 @@ def password_mgmt_keyboard():
     target = SETTINGS.get('pwd_target_task', 'BOTH')
     t_text = f"Target Task: {target}"
 
-    markup.row(KeyboardButton(f"Mode: {m_rand}"), KeyboardButton(f"Mode: {m_rand_date}"))
-    markup.row(KeyboardButton(f"Mode: {m_same}"), KeyboardButton("✍️ Set Custom Password"))
-    markup.row(KeyboardButton(f"🔄 {t_text}"))
-    markup.row(KeyboardButton("👑 Admin Panel"))
+    markup.row(telebot.types.KeyboardButton(f"Mode: {m_rand}"), telebot.types.KeyboardButton(f"Mode: {m_rand_date}"))
+    markup.row(telebot.types.KeyboardButton(f"Mode: {m_same}"), telebot.types.KeyboardButton("✍️ Set Custom Password"))
+    markup.row(telebot.types.KeyboardButton(f"🔄 {t_text}"))
+    markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
     return markup
 
 def referral_mgmt_keyboard():
-    markup = ReplyKeyboardMarkup(resize_keyboard=True)
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     ref_st = "🟢 ON" if SETTINGS.get('ref_enabled', True) else "🔴 OFF"
-    markup.row(KeyboardButton(f"Toggle Referral: {ref_st}"))
-    markup.row(KeyboardButton("💰 Set Referral Commission %"))
-    markup.row(KeyboardButton("👑 Admin Panel"))
+    markup.row(telebot.types.KeyboardButton(f"Toggle Referral: {ref_st}"))
+    markup.row(telebot.types.KeyboardButton("💰 Set Referral Commission %"))
+    markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
     return markup
 
 def top_control_keyboard():
-    markup = ReplyKeyboardMarkup(resize_keyboard=True)
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     st = "🟢 ON" if SETTINGS.get('top_enabled', True) else "🔴 OFF"
     mode = SETTINGS.get('top_reset_mode')
     if mode == 'daily_10pm':
@@ -197,40 +196,40 @@ def top_control_keyboard():
     else:
         mode_text = f"Every {SETTINGS.get('top_reset_interval_mins', 1440)} mins"
 
-    markup.row(KeyboardButton(f"Toggle Leaderboard: {st}"))
-    markup.row(KeyboardButton(f"Reset Schedule: {mode_text}"))
-    markup.row(KeyboardButton("⏱️ Set Reset Minutes"))
-    markup.row(KeyboardButton("🎁 Distribute Rewards & Reset Now"))
-    markup.row(KeyboardButton("💰 Edit Rank Rewards"))
-    markup.row(KeyboardButton("👑 Admin Panel"))
+    markup.row(telebot.types.KeyboardButton(f"Toggle Leaderboard: {st}"))
+    markup.row(telebot.types.KeyboardButton(f"Reset Schedule: {mode_text}"))
+    markup.row(telebot.types.KeyboardButton("⏱️ Set Reset Minutes"))
+    markup.row(telebot.types.KeyboardButton("🎁 Distribute Rewards & Reset Now"))
+    markup.row(telebot.types.KeyboardButton("💰 Edit Rank Rewards"))
+    markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
     return markup
 
 def task_control_keyboard():
-    markup = ReplyKeyboardMarkup(resize_keyboard=True)
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     t1 = "🟢 ON" if SETTINGS.get('tw_token_enabled', True) else "🔴 OFF"
     t2 = "🟢 ON" if SETTINGS.get('tw_2fa_enabled', True) else "🔴 OFF"
-    markup.row(KeyboardButton(f"Toggle Task 1: {t1}"), KeyboardButton(f"Toggle Task 2: {t2}"))
-    markup.row(KeyboardButton("⏱️ Set Report Timer Text"))
-    markup.row(KeyboardButton("👑 Admin Panel"))
+    markup.row(telebot.types.KeyboardButton(f"Toggle Task 1: {t1}"), telebot.types.KeyboardButton(f"Toggle Task 2: {t2}"))
+    markup.row(telebot.types.KeyboardButton("⏱️ Set Report Timer Text"))
+    markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
     return markup
 
 def payment_toggle_keyboard():
-    markup = ReplyKeyboardMarkup(resize_keyboard=True)
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     wd_st = "🟢 ON" if SETTINGS['withdraw_enabled'] else "🔴 OFF"
     bk_st = "🟢 ON" if SETTINGS['bkash_enabled'] else "🔴 OFF"
     ng_st = "🟢 ON" if SETTINGS['nagad_enabled'] else "🔴 OFF"
     bn_st = "🟢 ON" if SETTINGS['binance_enabled'] else "🔴 OFF"
 
-    markup.row(KeyboardButton(f"Withdraw Sys: {wd_st}"), KeyboardButton(f"Bkash: {bk_st}"))
-    markup.row(KeyboardButton(f"Nagad: {ng_st}"), KeyboardButton(f"Binance: {bn_st}"))
-    markup.row(KeyboardButton("⚙️ Set Minimum Withdraw Limit"))
-    markup.row(KeyboardButton("👑 Admin Panel"))
+    markup.row(telebot.types.KeyboardButton(f"Withdraw Sys: {wd_st}"), telebot.types.KeyboardButton(f"Bkash: {bk_st}"))
+    markup.row(telebot.types.KeyboardButton(f"Nagad: {ng_st}"), telebot.types.KeyboardButton(f"Binance: {bn_st}"))
+    markup.row(telebot.types.KeyboardButton("⚙️ Set Minimum Withdraw Limit"))
+    markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
     return markup
 
 def video_mgmt_keyboard():
-    markup = ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row(KeyboardButton("➕ Add Video File / Link"), KeyboardButton("🗑️ Remove All Videos"))
-    markup.row(KeyboardButton("👑 Admin Panel"))
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row(telebot.types.KeyboardButton("➕ Add Video File / Link"), telebot.types.KeyboardButton("🗑️ Remove All Videos"))
+    markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
     return markup
 
 def generate_unique_human_username():
@@ -513,8 +512,8 @@ def start(message):
             pass
 
     if not is_subscribed(user_id):
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("Join Channel", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}"))
+        markup = telebot.types.InlineKeyboardMarkup()
+        markup.add(telebot.types.InlineKeyboardButton("Join Channel", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}"))
         bot.send_message(user_id, f"You must join {CHANNEL_USERNAME} to use this bot!", reply_markup=markup)
         return
 
@@ -647,12 +646,12 @@ def handle_all_messages(message):
                 if target_uid in users:
                     u_data = get_user_data(target_uid)
                     st = "🔴 Blocked" if target_uid in blocked_users else "🟢 Active"
-                    markup = InlineKeyboardMarkup()
+                    markup = telebot.types.InlineKeyboardMarkup()
                     if target_uid in blocked_users:
-                        markup.add(InlineKeyboardButton("🟢 Unblock User", callback_data=f"adm_unblock_{target_uid}"))
+                        markup.add(telebot.types.InlineKeyboardButton("🟢 Unblock User", callback_data=f"adm_unblock_{target_uid}"))
                     else:
-                        markup.add(InlineKeyboardButton("🔴 Block User", callback_data=f"adm_block_{target_uid}"))
-                    markup.add(InlineKeyboardButton("💰 Edit Balance", callback_data=f"adm_edit_bal_{target_uid}"))
+                        markup.add(telebot.types.InlineKeyboardButton("🔴 Block User", callback_data=f"adm_block_{target_uid}"))
+                    markup.add(telebot.types.InlineKeyboardButton("💰 Edit Balance", callback_data=f"adm_edit_bal_{target_uid}"))
 
                     msg_txt = (
                         f"👤 **User Profile Info:**\n\n"
@@ -711,17 +710,17 @@ def handle_all_messages(message):
                 return
             
             target_uid_found = found_accounts[0]['user_id']
-            markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("✅ Approve All for this User", callback_data=f"app_uid_{target_uid_found}"))
-            markup.add(InlineKeyboardButton("❌ Reject All for this User", callback_data=f"rej_uid_{target_uid_found}"))
+            markup = telebot.types.InlineKeyboardMarkup()
+            markup.add(telebot.types.InlineKeyboardButton("✅ Approve All for this User", callback_data=f"app_uid_{target_uid_found}"))
+            markup.add(telebot.types.InlineKeyboardButton("❌ Reject All for this User", callback_data=f"rej_uid_{target_uid_found}"))
 
             summary_text = f"🔍 **Search Results for Query:** `{search_query}`\nTotal Pending/Found: {len(found_accounts)}\nTarget UID: `{target_uid_found}`"
             bot.send_message(ADMIN_ID, summary_text, parse_mode="Markdown", reply_markup=markup)
 
             for acc in found_accounts:
                 idx = submitted_accounts.index(acc)
-                btn = InlineKeyboardMarkup()
-                btn.add(InlineKeyboardButton("Approve", callback_data=f"app_{idx}"), InlineKeyboardButton("Reject", callback_data=f"rej_{idx}"))
+                btn = telebot.types.InlineKeyboardMarkup()
+                btn.add(telebot.types.InlineKeyboardButton("Approve", callback_data=f"app_{idx}"), telebot.types.InlineKeyboardButton("Reject", callback_data=f"rej_{idx}"))
                 info = f"User: `{acc['user_id']}`\nStatus: `{acc.get('status')}`\nTask: `{acc.get('task_name')}`\nUsername: `{acc['username']}`\nPassword: `{acc['password']}`\n2FA: `{acc.get('2fa', 'N/A')}`"
                 bot.send_message(ADMIN_ID, info, parse_mode="Markdown", reply_markup=btn)
             return
@@ -878,7 +877,7 @@ def handle_all_messages(message):
     if user_id == ADMIN_ID:
         if text == "📥 Custom Username Check":
             user_steps[ADMIN_ID] = 'admin_awaiting_custom_usernames'
-            bot.send_message(ADMIN_ID, "📥 Send Twitter **Usernames** (Text/Lines/Emails) or upload an `.xlsx` / `.txt` file directly:", reply_markup=ReplyKeyboardMarkup(resize_keyboard=True).row(KeyboardButton("👑 Admin Panel")))
+            bot.send_message(ADMIN_ID, "📥 Send Twitter **Usernames** (Text/Lines/Emails) or upload an `.xlsx` / `.txt` file directly:", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel")))
             return
 
         elif text == "🔍 Check Accounts via Username":
@@ -974,8 +973,8 @@ def handle_all_messages(message):
                 bot.send_message(ADMIN_ID, "⚠️ **Warning!** Please download the Excel file first using `📊 Download Excel: Task 1` button before deleting!", reply_markup=excel_task1_menu(), parse_mode="Markdown")
                 return
             
-            markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("⚠️ Yes, Delete All", callback_data="conf_del_t1"), InlineKeyboardButton("❌ Cancel", callback_data="cancel_del"))
+            markup = telebot.types.InlineKeyboardMarkup()
+            markup.add(telebot.types.InlineKeyboardButton("⚠️ Yes, Delete All", callback_data="conf_del_t1"), telebot.types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_del"))
             bot.send_message(ADMIN_ID, "⚠️ Are you sure you want to delete all accounts for this task?", reply_markup=markup)
             return
 
@@ -1010,8 +1009,8 @@ def handle_all_messages(message):
                 bot.send_message(ADMIN_ID, "⚠️ **Warning!** Please download the Excel file first using `📊 Download Excel: 2FA` button before deleting!", reply_markup=excel_2fa_menu(), parse_mode="Markdown")
                 return
             
-            markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("⚠️ Yes, Delete All", callback_data="conf_del_t2"), InlineKeyboardButton("❌ Cancel", callback_data="cancel_del"))
+            markup = telebot.types.InlineKeyboardMarkup()
+            markup.add(telebot.types.InlineKeyboardButton("⚠️ Yes, Delete All", callback_data="conf_del_t2"), telebot.types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_del"))
             bot.send_message(ADMIN_ID, "⚠️ Are you sure you want to delete all accounts for this task?", reply_markup=markup)
             return
 
@@ -1034,12 +1033,12 @@ def handle_all_messages(message):
 
         elif text == "⚙️ Set Minimum Withdraw Limit":
             user_steps[ADMIN_ID] = 'set_min_withdraw_limit'
-            bot.send_message(ADMIN_ID, f"⚙️ Current Minimum Withdraw Limit: ৳{SETTINGS.get('min_withdraw_bdt', 5.0)}\n\n✍️ Send the new minimum withdraw limit in BDT (numbers only, e.g. `10`):", reply_markup=ReplyKeyboardMarkup(resize_keyboard=True).row(KeyboardButton("⚙️ Payment Methods")), parse_mode="Markdown")
+            bot.send_message(ADMIN_ID, f"⚙️ Current Minimum Withdraw Limit: ৳{SETTINGS.get('min_withdraw_bdt', 5.0)}\n\n✍️ Send the new minimum withdraw limit in BDT (numbers only, e.g. `10`):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("⚙️ Payment Methods")), parse_mode="Markdown")
             return
 
         elif text == "👥 User Management":
             user_steps[ADMIN_ID] = 'admin_user_mgmt_search'
-            bot.send_message(ADMIN_ID, "🔍 Send the **UID (User ID)** of the user you want to manage or edit balance for:", reply_markup=ReplyKeyboardMarkup(resize_keyboard=True).row(KeyboardButton("👑 Admin Panel")))
+            bot.send_message(ADMIN_ID, "🔍 Send the **UID (User ID)** of the user you want to manage or edit balance for:", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel")))
             return
 
         elif text == "👥 Referral Management":
@@ -1060,7 +1059,7 @@ def handle_all_messages(message):
 
         elif text == "💰 Set Referral Commission %":
             user_steps[ADMIN_ID] = 'set_ref_commission_pct'
-            bot.send_message(ADMIN_ID, "💰 Send referral commission percentage (%) in numbers only (e.g. `10` or `15`):", reply_markup=ReplyKeyboardMarkup(resize_keyboard=True).row(KeyboardButton("👥 Referral Management")), parse_mode="Markdown")
+            bot.send_message(ADMIN_ID, "💰 Send referral commission percentage (%) in numbers only (e.g. `10` or `15`):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👥 Referral Management")), parse_mode="Markdown")
             return
 
         elif text == "🔐 Password Management":
@@ -1105,7 +1104,7 @@ def handle_all_messages(message):
 
         elif text == "✍️ Set Custom Password":
             user_steps[ADMIN_ID] = 'set_custom_pwd_value'
-            bot.send_message(ADMIN_ID, "✍️ Send the new custom password:", reply_markup=ReplyKeyboardMarkup(resize_keyboard=True).row(KeyboardButton("🔐 Password Management")), parse_mode="Markdown")
+            bot.send_message(ADMIN_ID, "✍️ Send the new custom password:", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("🔐 Password Management")), parse_mode="Markdown")
             return
 
         elif text.startswith("Toggle Task 1:"):
@@ -1118,7 +1117,7 @@ def handle_all_messages(message):
             return
         elif text == "⏱️ Set Report Timer Text":
             user_steps[ADMIN_ID] = 'set_report_time_custom'
-            bot.send_message(ADMIN_ID, "⏱️ Send report timer text (e.g., `Every 30 minutes`):", reply_markup=ReplyKeyboardMarkup(resize_keyboard=True).row(KeyboardButton("🛠️ Task Control")))
+            bot.send_message(ADMIN_ID, "⏱️ Send report timer text (e.g., `Every 30 minutes`):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("🛠️ Task Control")))
             return
 
         elif text == "🎬 Video Management":
@@ -1137,7 +1136,7 @@ def handle_all_messages(message):
 
         elif text == "🔍 Search UID/Username":
             user_steps[ADMIN_ID] = 'admin_search_uid_input'
-            bot.send_message(ADMIN_ID, "🔍 Send the UID or Username you want to search:", reply_markup=ReplyKeyboardMarkup(resize_keyboard=True).row(KeyboardButton("👑 Admin Panel")))
+            bot.send_message(ADMIN_ID, "🔍 Send the UID or Username you want to search:", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel")))
             return
 
         elif text == "⚡ Batch Approve / Percentage":
@@ -1146,17 +1145,17 @@ def handle_all_messages(message):
 
         elif text == "✅ Batch Approve Usernames":
             user_steps[ADMIN_ID] = 'admin_batch_approve_input'
-            bot.send_message(ADMIN_ID, "✍️ Send usernames separated by space to approve (e.g., `tracy78kn arif96xo`):", reply_markup=ReplyKeyboardMarkup(resize_keyboard=True).row(KeyboardButton("👑 Admin Panel")))
+            bot.send_message(ADMIN_ID, "✍️ Send usernames separated by space to approve (e.g., `tracy78kn arif96xo`):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel")))
             return
 
         elif text == "❌ Batch Reject Usernames":
             user_steps[ADMIN_ID] = 'admin_batch_reject_input'
-            bot.send_message(ADMIN_ID, "✍️ Send usernames separated by space to reject (e.g., `tracy78kn arif96xo`):", reply_markup=ReplyKeyboardMarkup(resize_keyboard=True).row(KeyboardButton("👑 Admin Panel")))
+            bot.send_message(ADMIN_ID, "✍️ Send usernames separated by space to reject (e.g., `tracy78kn arif96xo`):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel")))
             return
 
         elif text == "📊 Percentage Auto Process":
             user_steps[ADMIN_ID] = 'admin_percentage_approve_input'
-            bot.send_message(ADMIN_ID, "📊 Send the percentage (%) of pending accounts to approve (e.g., `80` will approve 80% and reject 20% for each user):", reply_markup=ReplyKeyboardMarkup(resize_keyboard=True).row(KeyboardButton("👑 Admin Panel")), parse_mode="Markdown")
+            bot.send_message(ADMIN_ID, "📊 Send the percentage (%) of pending accounts to approve (e.g., `80` will approve 80% and reject 20% for each user):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel")), parse_mode="Markdown")
             return
 
         if text == "🏆 Top Control":
@@ -1204,7 +1203,7 @@ def handle_all_messages(message):
 
         elif text == "⏱️ Set Reset Minutes":
             user_steps[ADMIN_ID] = 'set_top_reset_mins_input'
-            bot.send_message(ADMIN_ID, "⏱️ Send reset interval in minutes (e.g., `30`, `60`, or `1440`):", reply_markup=ReplyKeyboardMarkup(resize_keyboard=True).row(KeyboardButton("🏆 Top Control")), parse_mode="Markdown")
+            bot.send_message(ADMIN_ID, "⏱️ Send reset interval in minutes (e.g., `30`, `60`, or `1440`):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("🏆 Top Control")), parse_mode="Markdown")
             return
 
         elif text == "🎁 Distribute Rewards & Reset Now":
@@ -1214,7 +1213,7 @@ def handle_all_messages(message):
 
         elif text == "💰 Edit Rank Rewards":
             user_steps[ADMIN_ID] = 'set_top_rank_rewards'
-            bot.send_message(ADMIN_ID, "💰 Send bonus amounts for ranks 1 to 5 separated by space:\n\n**Example:** `1.00 0.50 0.30 0.20 0.10`", reply_markup=ReplyKeyboardMarkup(resize_keyboard=True).row(KeyboardButton("🏆 Top Control")), parse_mode="Markdown")
+            bot.send_message(ADMIN_ID, "💰 Send bonus amounts for ranks 1 to 5 separated by space:\n\n**Example:** `1.00 0.50 0.30 0.20 0.10`", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("🏆 Top Control")), parse_mode="Markdown")
             return
 
         if text in ["👑 Admin Panel", "Admin Panel"]:
@@ -1222,14 +1221,14 @@ def handle_all_messages(message):
             return
 
         elif text == "📋 Pending Accounts":
-            pending_list = [acc for acc in submitted_accounts if acc.get('status') == 'pending']
+            pending_list = [acc for acc in submitted_accounts if acc.get('status'] == 'pending']
             if not pending_list:
                 bot.send_message(ADMIN_ID, "No pending accounts to review!", reply_markup=admin_panel_keyboard())
                 return
             for idx, acc in enumerate(submitted_accounts):
                 if acc.get('status') == 'pending':
-                    markup = InlineKeyboardMarkup()
-                    markup.add(InlineKeyboardButton("Approve", callback_data=f"app_{idx}"), InlineKeyboardButton("Reject", callback_data=f"rej_{idx}"))
+                    markup = telebot.types.InlineKeyboardMarkup()
+                    markup.add(telebot.types.InlineKeyboardButton("Approve", callback_data=f"app_{idx}"), telebot.types.InlineKeyboardButton("Reject", callback_data=f"rej_{idx}"))
                     info = f"User: `{acc['user_id']}`\nTask: `{acc.get('task_name')}`\nUsername: `{acc['username']}`\nPassword: `{acc['password']}`\n2FA: `{acc.get('2fa', 'N/A')}`\nAuth Token: `{acc.get('token', 'N/A')}`"
                     bot.send_message(ADMIN_ID, info, parse_mode="Markdown", reply_markup=markup)
             return
@@ -1241,30 +1240,30 @@ def handle_all_messages(message):
                 return
             for idx, req in enumerate(withdraw_requests):
                 if req.get('status', 'pending') == 'pending':
-                    markup = InlineKeyboardMarkup()
+                    markup = telebot.types.InlineKeyboardMarkup()
                     markup.row(
-                        InlineKeyboardButton("✅ Mark as Paid", callback_data=f"pay_wd_{idx}"),
-                        InlineKeyboardButton("❌ Reject & Refund", callback_data=f"rej_wd_{idx}")
+                        telebot.types.InlineKeyboardButton("✅ Mark as Paid", callback_data=f"pay_wd_{idx}"),
+                        telebot.types.InlineKeyboardButton("❌ Reject & Refund", callback_data=f"rej_wd_{idx}")
                     )
                     info = f"📤 **Withdraw Request ID:** `{idx}`\n• User ID: `{req['user_id']}`\n• Amount: **${req['amount_usd']:.4f}** (~৳{req['amount_bdt']:.2f})\n• Method: **{req['method']}**\n• Details: `{req['details']}`"
                     bot.send_message(ADMIN_ID, info, parse_mode="Markdown", reply_markup=markup)
             return
 
         elif text == "💰 Change Price":
-            markup = ReplyKeyboardMarkup(resize_keyboard=True)
-            markup.row(KeyboardButton("Change Task 1 Price"), KeyboardButton("Change Task 2 Price"))
-            markup.row(KeyboardButton("👑 Admin Panel"))
+            markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+            markup.row(telebot.types.KeyboardButton("Change Task 1 Price"), telebot.types.KeyboardButton("Change Task 2 Price"))
+            markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
             bot.send_message(ADMIN_ID, f"💰 **Current Prices:**\n• Task 1: `${SETTINGS['reward_tw_token']:.4f}`\n• Task 2: `${SETTINGS['reward_tw_2fa']:.4f}`\n\nSelect option below to change:", reply_markup=markup, parse_mode="Markdown")
             return
 
         elif text == "Change Task 1 Price":
             user_steps[ADMIN_ID] = 'set_price_t1'
-            bot.send_message(ADMIN_ID, "Send new price for Task 1 in USD ($):", reply_markup=ReplyKeyboardMarkup(resize_keyboard=True).row(KeyboardButton("👑 Admin Panel")))
+            bot.send_message(ADMIN_ID, "Send new price for Task 1 in USD ($):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel")))
             return
 
         elif text == "Change Task 2 Price":
             user_steps[ADMIN_ID] = 'set_price_t2'
-            bot.send_message(ADMIN_ID, "Send new price for Task 2 in USD ($):", reply_markup=ReplyKeyboardMarkup(resize_keyboard=True).row(KeyboardButton("👑 Admin Panel")))
+            bot.send_message(ADMIN_ID, "Send new price for Task 2 in USD ($):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel")))
             return
 
         elif text == "✏️ Change Task Names":
@@ -1277,7 +1276,7 @@ def handle_all_messages(message):
 
         elif text == "📢 Broadcast Message":
             user_steps[ADMIN_ID] = 'admin_broadcast_msg'
-            bot.send_message(ADMIN_ID, "📢 Send the message you want to broadcast to all users:", reply_markup=ReplyKeyboardMarkup(resize_keyboard=True).row(KeyboardButton("👑 Admin Panel")))
+            bot.send_message(ADMIN_ID, "📢 Send the message you want to broadcast to all users:", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel")))
             return
 
         elif text == "🛠️ Task Control":
@@ -1341,14 +1340,14 @@ def handle_all_messages(message):
             bot.send_message(user_id, f"❌ Insufficient balance!\nCurrent Balance: ${bal:.4f} (~৳{bdt_amt:.2f})\nMinimum Withdraw: ৳{min_bdt}")
             return
 
-        markup = ReplyKeyboardMarkup(resize_keyboard=True)
+        markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
         if SETTINGS.get('bkash_enabled', True):
-            markup.row(KeyboardButton("💸 Bkash"))
+            markup.row(telebot.types.KeyboardButton("💸 Bkash"))
         if SETTINGS.get('nagad_enabled', True):
-            markup.row(KeyboardButton("💳 Nagad"))
+            markup.row(telebot.types.KeyboardButton("💳 Nagad"))
         if SETTINGS.get('binance_enabled', True):
-            markup.row(KeyboardButton("🟡 Binance USDT"))
-        markup.row(KeyboardButton("❌ Cancel"))
+            markup.row(telebot.types.KeyboardButton("🟡 Binance USDT"))
+        markup.row(telebot.types.KeyboardButton("❌ Cancel"))
         
         user_steps[user_id] = 'awaiting_withdraw_method'
         bot.send_message(user_id, f"💳 Your Balance: ${bal:.4f} (~৳{bdt_amt:.2f})\n\nSelect a payment method to withdraw:", reply_markup=markup)
@@ -1367,10 +1366,8 @@ def handle_all_messages(message):
         total_refs = u_data.get('referral_count', 0)
         ref_list = u_data.get('referrals_list', [])
         
-        # Calculate new in last 24 hours
         now_ts = time.time()
         new_24h = sum(1 for r in ref_list if now_ts - r.get('time', 0) <= 86400)
-        
         ref_earned = u_data.get('ref_earned', 0.0)
         
         ref_msg = (
@@ -1396,9 +1393,9 @@ def handle_all_messages(message):
             bot.send_message(user_id, "❌ No video tutorial available right now.")
             return
         
-        markup = InlineKeyboardMarkup()
+        markup = telebot.types.InlineKeyboardMarkup()
         for idx, v in enumerate(videos_list):
-            markup.add(InlineKeyboardButton(f"▶️ {v['title']}", callback_data=f"watch_vid_{idx}"))
+            markup.add(telebot.types.InlineKeyboardButton(f"▶️ {v['title']}", callback_data=f"watch_vid_{idx}"))
         
         bot.send_message(user_id, "🎬 **Tutorial Videos:**\n\nClick button below:", reply_markup=markup, parse_mode="Markdown")
         return
@@ -1428,9 +1425,9 @@ def handle_all_messages(message):
         details_text = f"Login: `{login_user}`\nPassword: `{password_gen}`\nEmail: `{email}`"
         bot.send_message(user_id, details_text, parse_mode="Markdown")
 
-        markup = ReplyKeyboardMarkup(resize_keyboard=True)
-        markup.row(KeyboardButton("📩 Get code"))
-        markup.row(KeyboardButton("❌ Cancel"))
+        markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+        markup.row(telebot.types.KeyboardButton("📩 Get code"))
+        markup.row(telebot.types.KeyboardButton("❌ Cancel"))
         bot.send_message(user_id, "👉 Press the button to get the code or cancel the task:", reply_markup=markup)
         return
 
@@ -1459,9 +1456,9 @@ def handle_all_messages(message):
         details_text = f"Login: `{login_user}`\nPassword: `{password_gen}`\nEmail: `{email}`"
         bot.send_message(user_id, details_text, parse_mode="Markdown")
 
-        markup = ReplyKeyboardMarkup(resize_keyboard=True)
-        markup.row(KeyboardButton("📩 Get code"))
-        markup.row(KeyboardButton("❌ Cancel"))
+        markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+        markup.row(telebot.types.KeyboardButton("📩 Get code"))
+        markup.row(telebot.types.KeyboardButton("❌ Cancel"))
         bot.send_message(user_id, "👉 Press the button to get the code or cancel the task:", reply_markup=markup)
         return
 
@@ -1474,9 +1471,9 @@ def handle_all_messages(message):
         mail_info = active_mails[user_id]
         otp_code = fetch_twitter_code(mail_info['token'])
 
-        markup = ReplyKeyboardMarkup(resize_keyboard=True)
-        markup.row(KeyboardButton("📩 Get code"))
-        markup.row(KeyboardButton("❌ Cancel"))
+        markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+        markup.row(telebot.types.KeyboardButton("📩 Get code"))
+        markup.row(telebot.types.KeyboardButton("❌ Cancel"))
 
         if otp_code:
             bot.send_message(user_id, f"`{otp_code}`", parse_mode="Markdown")
@@ -1497,7 +1494,7 @@ def handle_all_messages(message):
             u_data = get_user_data(user_id)
             bal = u_data['balance']
             bdt_amt = bal * SETTINGS['usd_to_bdt']
-            bot.send_message(user_id, f"💳 Your Balance: ${bal:.4f} (~৳{bdt_amt:.2f})\n\n✍️ Please enter the amount you want to withdraw in USD ($):", reply_markup=ReplyKeyboardMarkup(resize_keyboard=True).row(KeyboardButton("❌ Cancel")))
+            bot.send_message(user_id, f"💳 Your Balance: ${bal:.4f} (~৳{bdt_amt:.2f})\n\n✍️ Please enter the amount you want to withdraw in USD ($):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("❌ Cancel")))
         return
 
     elif step == 'awaiting_withdraw_amount':
@@ -1531,9 +1528,9 @@ def handle_all_messages(message):
             user_steps[user_id] = 'awaiting_withdraw_details'
 
             if method == "Binance":
-                bot.send_message(user_id, "✍️ Send your correct **Binance UID** (must be exactly 9 digits, e.g. `123456789`):", reply_markup=ReplyKeyboardMarkup(resize_keyboard=True).row(KeyboardButton("❌ Cancel")))
+                bot.send_message(user_id, "✍️ Send your correct **Binance UID** (must be exactly 9 digits, e.g. `123456789`):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("❌ Cancel")))
             else:
-                bot.send_message(user_id, f"✍️ Send your correct **{method}** account number (11 digits, e.g. `017xxxxxxxx`):", reply_markup=ReplyKeyboardMarkup(resize_keyboard=True).row(KeyboardButton("❌ Cancel")))
+                bot.send_message(user_id, f"✍️ Send your correct **{method}** account number (11 digits, e.g. `017xxxxxxxx`):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("❌ Cancel")))
         except ValueError:
             bot.send_message(user_id, "❌ Invalid number format! Please enter a valid number in USD (e.g. 5.0):")
         return
@@ -1595,15 +1592,15 @@ def handle_all_messages(message):
 
         if task_type == 'task1_token':
             user_steps[user_id] = 'awaiting_auth_token_input'
-            markup = ReplyKeyboardMarkup(resize_keyboard=True)
-            markup.row(KeyboardButton("❌ Cancel"))
+            markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+            markup.row(telebot.types.KeyboardButton("❌ Cancel"))
             bot.send_message(user_id, f"`{current_otp}`", parse_mode="Markdown")
             bot.send_message(user_id, "📋 Your one-time code:\n\n👆 Tap the code to copy\n\nPlease send the account auth_token / cookies:", reply_markup=markup)
 
         elif task_type == 'task2_2fa':
             user_steps[user_id] = 'awaiting_final_confirmation'
-            markup = ReplyKeyboardMarkup(resize_keyboard=True)
-            markup.row(KeyboardButton("✅ Confirm"), KeyboardButton("❌ Cancel"))
+            markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+            markup.row(telebot.types.KeyboardButton("✅ Confirm"), telebot.types.KeyboardButton("❌ Cancel"))
             bot.send_message(user_id, f"`{current_otp}`", parse_mode="Markdown")
             bot.send_message(user_id, "📋 Your one-time code:\n\n👆 Tap the code to copy\n\nPlease press **✅ Confirm** or **❌ Cancel**:", reply_markup=markup, parse_mode="Markdown")
         return
@@ -1625,9 +1622,9 @@ def handle_all_messages(message):
         }
         submitted_accounts.append(acc_entry)
 
-        markup = InlineKeyboardMarkup()
+        markup = telebot.types.InlineKeyboardMarkup()
         acc_index = len(submitted_accounts) - 1
-        markup.add(InlineKeyboardButton("Approve", callback_data=f"app_{acc_index}"), InlineKeyboardButton("Reject", callback_data=f"rej_{acc_index}"))
+        markup.add(telebot.types.InlineKeyboardButton("Approve", callback_data=f"app_{acc_index}"), telebot.types.InlineKeyboardButton("Reject", callback_data=f"rej_{acc_index}"))
 
         admin_alert = f"New Account Pending Approval!\n\nUser: `{user_id}`\nTask: `{acc_entry['task_name']}`\nUsername: `{acc_entry['username']}`\nPassword: `{acc_entry['password']}`\n2FA: `{acc_entry['2fa']}`\nAuth Token: `{acc_entry['token']}`"
         try:
@@ -1656,9 +1653,9 @@ def handle_all_messages(message):
             }
             submitted_accounts.append(acc_entry)
 
-            markup = InlineKeyboardMarkup()
+            markup = telebot.types.InlineKeyboardMarkup()
             acc_index = len(submitted_accounts) - 1
-            markup.add(InlineKeyboardButton("Approve", callback_data=f"app_{acc_index}"), InlineKeyboardButton("Reject", callback_data=f"rej_{acc_index}"))
+            markup.add(telebot.types.InlineKeyboardButton("Approve", callback_data=f"app_{acc_index}"), telebot.types.InlineKeyboardButton("Reject", callback_data=f"rej_{acc_index}"))
 
             admin_alert = f"New Account Pending Approval!\n\nUser: `{user_id}`\nTask: `{acc_entry['task_name']}`\nUsername: `{acc_entry['username']}`\nPassword: `{acc_entry['password']}`\n2FA: `{acc_entry['2fa']}`\nAuth Token: `{acc_entry['token']}`"
             try:
@@ -1672,8 +1669,8 @@ def handle_all_messages(message):
             user_acc_data.pop(user_id, None)
             return
         else:
-            markup = ReplyKeyboardMarkup(resize_keyboard=True)
-            markup.row(KeyboardButton("✅ Confirm"), KeyboardButton("❌ Cancel"))
+            markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+            markup.row(telebot.types.KeyboardButton("✅ Confirm"), telebot.types.KeyboardButton("❌ Cancel"))
             bot.send_message(user_id, "Please press **✅ Confirm** or **❌ Cancel**", reply_markup=markup, parse_mode="Markdown")
             return
 
@@ -1747,7 +1744,7 @@ def handle_callbacks(call):
         target_uid = int(data.replace("adm_edit_bal_", ""))
         user_steps[ADMIN_ID] = f"adm_set_bal_{target_uid}"
         bot.answer_callback_query(call.id)
-        bot.send_message(ADMIN_ID, f"✍️ Send new balance in USD ($) for user (`{target_uid}`):", reply_markup=ReplyKeyboardMarkup(resize_keyboard=True).row(KeyboardButton("👑 Admin Panel")))
+        bot.send_message(ADMIN_ID, f"✍️ Send new balance in USD ($) for user (`{target_uid}`):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel")))
 
     elif data == "conf_del_t1":
         before_count = len(submitted_accounts)
@@ -1869,6 +1866,16 @@ def handle_callbacks(call):
 
 if __name__ == '__main__':
     print("Bot is running with Cookie Auth Token Extraction & Flask Web Server...")
-    t = threading.Thread(target=run_web)
-    t.start()
-    bot.infinity_polling()
+    
+    # ব্যাকগ্রাউন্ডে ফ্লাস্ক সার্ভার রান করা
+    web_thread = threading.Thread(target=run_web)
+    web_thread.daemon = True
+    web_thread.start()
+    
+    # মেইন থ্রেডে টেলিগ্রাম বট পোলিং চালানো
+    while True:
+        try:
+            bot.infinity_polling(timeout=60, long_polling_timeout=60)
+        except Exception as e:
+            print(f"Polling error occurred: {e}")
+            time.sleep(5)
