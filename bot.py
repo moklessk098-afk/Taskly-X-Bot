@@ -9,6 +9,7 @@ import pyotp
 import io
 import openpyxl
 import threading
+import os  # <--- এখানে 'os' মডিউল যুক্ত করা হয়েছে
 from flask import Flask
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -24,7 +25,7 @@ def run_web():
     app.run(host='0.0.0.0', port=port)
 
 # Bot Configuration
-TOKEN = '8812072288:AAEn_oCoB88GpiX8KlpARU-icElsBUjwj1w'
+TOKEN = '8666711380:AAFZlyF9tDeVpUQl_jED3OxNPm-creeWExo'
 CHANNEL_USERNAME = '@taandob7'
 ADMIN_ID = 8702921423
 BOT_USERNAME = 'mokles1_bot'
