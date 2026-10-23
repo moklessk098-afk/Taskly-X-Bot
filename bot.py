@@ -9,7 +9,7 @@ import pyotp
 import io
 import openpyxl
 import threading
-import os  # <--- এখানে 'os' মডিউল যুক্ত করা হয়েছে
+import os
 from flask import Flask
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -40,7 +40,7 @@ SETTINGS = {
     'reward_tw_2fa': 0.03,      
     'usd_to_bdt': 125.0,        
     'withdraw_fee_bdt': 5.0,    
-    'min_withdraw_bdt': 20.0,   
+    'min_withdraw_bdt': 5.0,   
     'withdraw_enabled': True,   
     'bkash_enabled': True,
     'nagad_enabled': True,
@@ -84,6 +84,19 @@ submitted_accounts = []
 withdraw_requests = []  
 blocked_users = set()
 downloaded_status = {'task1': False, 'task2': False}
+
+def get_user_data(user_id, name="User"):
+    if user_id not in users:
+        users[user_id] = {
+            'name': name, 
+            'balance': 0.0, 
+            'total_earned': 0.0, 
+            'completed_tasks': 0,
+            'referral_count': 0,
+            'ref_earned': 0.0,
+            'referrals_list': [] # list of dicts: {'uid': 123, 'time': timestamp}
+        }
+    return users[user_id]
 
 def is_subscribed(user_id):
     try:
@@ -408,19 +421,21 @@ def approve_single_account(acc):
         acc['status'] = 'approved'
         target_uid = acc['user_id']
         rw = SETTINGS['reward_tw_token'] if acc.get('task_name') == SETTINGS['task1_name'] else SETTINGS['reward_tw_2fa']
-        if target_uid not in users:
-            users[target_uid] = {'name': 'User', 'balance': 0.0, 'total_earned': 0.0, 'completed_tasks': 0}
-        users[target_uid]['balance'] += rw
-        users[target_uid]['total_earned'] += rw
-        users[target_uid]['completed_tasks'] += 1
+        
+        u_data = get_user_data(target_uid)
+        u_data['balance'] += rw
+        u_data['total_earned'] += rw
+        u_data['completed_tasks'] += 1
         
         if SETTINGS.get('ref_enabled', True):
-            referrer_id = users[target_uid].get('referred_by')
+            referrer_id = u_data.get('referred_by')
             if referrer_id and referrer_id in users:
                 pct = SETTINGS.get('ref_commission_pct', 10.0)
                 commission = rw * (pct / 100.0)
-                users[referrer_id]['balance'] += commission
-                users[referrer_id]['total_earned'] += commission
+                ref_user = get_user_data(referrer_id)
+                ref_user['balance'] += commission
+                ref_user['total_earned'] += commission
+                ref_user['ref_earned'] = ref_user.get('ref_earned', 0.0) + commission
                 try:
                     bot.send_message(referrer_id, f"👥 **Referral Commission!**\nYour referral completed a task, you earned **${commission:.4f}** commission!")
                 except Exception:
@@ -476,15 +491,20 @@ def start(message):
         return
 
     name = message.from_user.first_name or "User"
-    if user_id not in users:
-        users[user_id] = {'name': name, 'balance': 0.0, 'total_earned': 0.0, 'completed_tasks': 0}
+    u_data = get_user_data(user_id, name)
 
     args = message.text.split()
     if len(args) > 1 and args[1].startswith('ref_'):
         try:
             ref_id = int(args[1].replace('ref_', ''))
-            if ref_id != user_id and ref_id in users and 'referred_by' not in users[user_id]:
-                users[user_id]['referred_by'] = ref_id
+            if ref_id != user_id and ref_id in users and 'referred_by' not in u_data:
+                u_data['referred_by'] = ref_id
+                ref_user = get_user_data(ref_id)
+                ref_user['referral_count'] = ref_user.get('referral_count', 0) + 1
+                if 'referrals_list' not in ref_user:
+                    ref_user['referrals_list'] = []
+                ref_user['referrals_list'].append({'uid': user_id, 'time': time.time()})
+                
                 try:
                     bot.send_message(ref_id, f"👥 A new member joined from your referral link: {name}")
                 except Exception:
@@ -625,7 +645,7 @@ def handle_all_messages(message):
             try:
                 target_uid = int(message.text.strip())
                 if target_uid in users:
-                    u_data = users[target_uid]
+                    u_data = get_user_data(target_uid)
                     st = "🔴 Blocked" if target_uid in blocked_users else "🟢 Active"
                     markup = InlineKeyboardMarkup()
                     if target_uid in blocked_users:
@@ -641,7 +661,8 @@ def handle_all_messages(message):
                         f"• Status: `{st}`\n"
                         f"• Current Balance: `${u_data.get('balance', 0.0):.4f}`\n"
                         f"• Total Lifetime Earned: `${u_data.get('total_earned', 0.0):.4f}`\n"
-                        f"• Completed Tasks: {u_data.get('completed_tasks', 0)}"
+                        f"• Completed Tasks: {u_data.get('completed_tasks', 0)}\n"
+                        f"• Total Referrals: {u_data.get('referral_count', 0)}"
                     )
                     bot.send_message(ADMIN_ID, msg_txt, reply_markup=markup, parse_mode="Markdown")
                 else:
@@ -1311,10 +1332,8 @@ def handle_all_messages(message):
             bot.send_message(user_id, "❌ Withdrawal system is currently disabled.")
             return
         
-        if user_id not in users:
-            users[user_id] = {'name': message.from_user.first_name, 'balance': 0.0, 'total_earned': 0.0, 'completed_tasks': 0}
-        
-        bal = users[user_id]['balance']
+        u_data = get_user_data(user_id, message.from_user.first_name)
+        bal = u_data['balance']
         bdt_amt = bal * SETTINGS['usd_to_bdt']
         min_bdt = SETTINGS['min_withdraw_bdt']
 
@@ -1341,12 +1360,25 @@ def handle_all_messages(message):
             bot.send_message(user_id, "❌ Referral system is currently disabled.")
             return
         
+        u_data = get_user_data(user_id, message.from_user.first_name)
         ref_link = f"https://t.me/{BOT_USERNAME}?start=ref_{user_id}"
         ref_pct = SETTINGS.get('ref_commission_pct', 10.0)
+        
+        total_refs = u_data.get('referral_count', 0)
+        ref_list = u_data.get('referrals_list', [])
+        
+        # Calculate new in last 24 hours
+        now_ts = time.time()
+        new_24h = sum(1 for r in ref_list if now_ts - r.get('time', 0) <= 86400)
+        
+        ref_earned = u_data.get('ref_earned', 0.0)
+        
         ref_msg = (
-            f"👥 **Referral Program:**\n\n"
-            f"Share your link below with friends. When they join and complete tasks, you will earn **{ref_pct}%** commission!\n\n"
-            f"🔗 Link: `{ref_link}`"
+            f"👥 **Total referrals:** `{total_refs}`\n"
+            f"🆕 **New in last 24 hours:** `{new_24h}`\n\n"
+            f"💰 **Total Referral Income:** `${ref_earned:.4f}`\n\n"
+            f"🔗 **Your referral link:**\n`{ref_link}`\n\n"
+            f"ℹ️ You receive **{ref_pct}%** of the earnings of each of your referrals from the tasks they complete."
         )
         bot.send_message(user_id, ref_msg, parse_mode="Markdown")
         return
@@ -1462,7 +1494,8 @@ def handle_all_messages(message):
             clean_method = "Bkash" if "Bkash" in text else ("Nagad" if "Nagad" in text else "Binance")
             user_acc_data[user_id] = {'wd_method': clean_method}
             user_steps[user_id] = 'awaiting_withdraw_amount'
-            bal = users[user_id]['balance']
+            u_data = get_user_data(user_id)
+            bal = u_data['balance']
             bdt_amt = bal * SETTINGS['usd_to_bdt']
             bot.send_message(user_id, f"💳 Your Balance: ${bal:.4f} (~৳{bdt_amt:.2f})\n\n✍️ Please enter the amount you want to withdraw in USD ($):", reply_markup=ReplyKeyboardMarkup(resize_keyboard=True).row(KeyboardButton("❌ Cancel")))
         return
@@ -1470,7 +1503,8 @@ def handle_all_messages(message):
     elif step == 'awaiting_withdraw_amount':
         try:
             amt_usd = float(text.strip())
-            bal = users[user_id]['balance']
+            u_data = get_user_data(user_id)
+            bal = u_data['balance']
             fee_bdt = SETTINGS['withdraw_fee_bdt']
             usd_to_bdt = SETTINGS['usd_to_bdt']
             fee_usd = fee_bdt / usd_to_bdt
@@ -1521,7 +1555,8 @@ def handle_all_messages(message):
         amt_bdt = user_acc_data[user_id]['wd_amount_bdt']
         total_deduct_usd = user_acc_data[user_id]['wd_total_deduct_usd']
 
-        users[user_id]['balance'] -= total_deduct_usd 
+        u_data = get_user_data(user_id)
+        u_data['balance'] -= total_deduct_usd 
         req_obj = {
             'user_id': user_id,
             'amount_usd': amt_usd,
@@ -1644,19 +1679,18 @@ def handle_all_messages(message):
 
     elif text == "💰 Balance":
         user_steps.pop(user_id, None)
-        if user_id not in users:
-            users[user_id] = {'name': message.from_user.first_name, 'balance': 0.0, 'total_earned': 0.0, 'completed_tasks': 0}
+        u_data = get_user_data(user_id, message.from_user.first_name)
         
-        bal = users[user_id]['balance']
+        bal = u_data['balance']
         bdt_bal = bal * SETTINGS['usd_to_bdt']
         
         pending_wd_usd = sum(req['amount_usd'] for req in withdraw_requests if req['user_id'] == user_id and req.get('status') == 'pending')
         pending_wd_bdt = pending_wd_usd * SETTINGS['usd_to_bdt']
         
-        total_earned_usd = users[user_id]['total_earned']
+        total_earned_usd = u_data['total_earned']
         total_earned_bdt = total_earned_usd * SETTINGS['usd_to_bdt']
         
-        completed_tasks = users[user_id]['completed_tasks']
+        completed_tasks = u_data['completed_tasks']
         in_review = sum(1 for acc in submitted_accounts if acc.get('user_id') == user_id and acc.get('status') == 'pending')
 
         balance_text = (
@@ -1674,12 +1708,11 @@ def handle_all_messages(message):
 
     elif text == "👤 Profile":
         user_steps.pop(user_id, None)
-        if user_id not in users:
-            users[user_id] = {'name': message.from_user.first_name, 'balance': 0.0, 'total_earned': 0.0, 'completed_tasks': 0}
+        u_data = get_user_data(user_id, message.from_user.first_name)
         
         my_pendings = sum(1 for acc in submitted_accounts if acc.get('user_id') == user_id and acc.get('status') == 'pending')
         
-        profile_text = f"👤 **Profile Info:**\n\n• Name: {users[user_id].get('name')}\n• User ID: `{user_id}`\n• Completed Tasks: {users[user_id]['completed_tasks']}\n• Pending Accounts: {my_pendings}\n• Balance: ${users[user_id]['balance']:.4f}"
+        profile_text = f"👤 **Profile Info:**\n\n• Name: {u_data.get('name')}\n• User ID: `{user_id}`\n• Completed Tasks: {u_data['completed_tasks']}\n• Pending Accounts: {my_pendings}\n• Balance: ${u_data['balance']:.4f}\n• Total Referrals: {u_data.get('referral_count', 0)}"
         bot.send_message(user_id, profile_text, parse_mode="Markdown")
         return
 
