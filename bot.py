@@ -9,7 +9,19 @@ import pyotp
 import io
 import openpyxl
 import threading
+from flask import Flask
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+
+# ফ্লাস্ক সার্ভার (24/7 রানিং রাখার জন্য)
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot is active and running 24/7!"
+
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
 
 # Bot Configuration
 TOKEN = '8812072288:AAEn_oCoB88GpiX8KlpARU-icElsBUjwj1w'
@@ -309,12 +321,10 @@ def extract_username(text):
 
 def extract_auth_token(text):
     text = text.strip()
-    # Check if full cookie format contains auth_token=
     match = re.search(r'auth_token=([a-zA-Z0-9_-]+)', text)
     if match:
         return match.group(1)
     
-    # If pasted as token directly or with extra quotes/semicolons
     clean_text = text.replace('"', '').replace("'", "").split(';')[0].strip()
     if len(clean_text) >= 20:
         return clean_text
@@ -356,7 +366,7 @@ def check_status_by_username(username):
     except Exception:
         pass
 
-    return 'active'
+    return 'suspended'
 
 def process_file_or_text_usernames(message):
     usernames_found = []
@@ -1563,7 +1573,6 @@ def handle_all_messages(message):
         return
 
     elif step == 'awaiting_auth_token_input':
-        # Extracted clean auth_token from full cookies or text
         extracted_token = extract_auth_token(text)
         user_acc_data[user_id]['token'] = extracted_token
         
@@ -1825,5 +1834,7 @@ def handle_callbacks(call):
                 pass
 
 if __name__ == '__main__':
-    print("Bot is running with Cookie Auth Token Extraction...")
+    print("Bot is running with Cookie Auth Token Extraction & Flask Web Server...")
+    t = threading.Thread(target=run_web)
+    t.start()
     bot.infinity_polling()
