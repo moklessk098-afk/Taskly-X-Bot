@@ -1221,7 +1221,7 @@ def handle_all_messages(message):
             return
 
         elif text == "📋 Pending Accounts":
-            pending_list = [acc for acc in submitted_accounts if acc.get('status'] == 'pending']
+            pending_list = [acc for acc in submitted_accounts if acc.get('status') == 'pending']
             if not pending_list:
                 bot.send_message(ADMIN_ID, "No pending accounts to review!", reply_markup=admin_panel_keyboard())
                 return
