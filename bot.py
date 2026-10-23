@@ -28,7 +28,7 @@ def run_web():
 TOKEN = '8666711380:AAFZlyF9tDeVpUQl_jED3OxNPm-creeWExo'
 CHANNEL_USERNAME = '@taandob7'
 ADMIN_ID = 8702921423
-BOT_USERNAME = 'mokles1_bot'
+BOT_USERNAME = 'TasklyX_BD_Bot'
 
 bot = telebot.TeleBot(TOKEN)
 
@@ -40,7 +40,7 @@ SETTINGS = {
     'reward_tw_2fa': 0.03,      
     'usd_to_bdt': 125.0,        
     'withdraw_fee_bdt': 5.0,    
-    'min_withdraw_bdt': 5.0,   
+    'min_withdraw_bdt': 20.0,   
     'withdraw_enabled': True,   
     'bkash_enabled': True,
     'nagad_enabled': True,
