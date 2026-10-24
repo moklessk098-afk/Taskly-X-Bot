@@ -24,7 +24,7 @@ def run_web():
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
 
-TOKEN = '8666711380:AAHGASO6jcd6Iqeb0sy9E9BewZz6S9eam-A'
+TOKEN = '8666711380:AAGLnSP2rzflGpIb1gyPNcegOcXWF7yO_Xg'
 CHANNEL_USERNAME = '@taandob7'
 ADMIN_ID = 8702921423
 BOT_USERNAME = 'TasklyX_BD_Bot'
