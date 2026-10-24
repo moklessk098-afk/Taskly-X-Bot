@@ -24,7 +24,7 @@ def run_web():
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
 
-TOKEN = '8666711380:AAGOhOTEI2I8Pe93PXKZSsPkGC2pPq5tsrY'
+TOKEN = '8666711380:AAHGASO6jcd6Iqeb0sy9E9BewZz6S9eam-A'
 CHANNEL_USERNAME = '@taandob7'
 ADMIN_ID = 8702921423
 BOT_USERNAME = 'TasklyX_BD_Bot'
@@ -32,8 +32,8 @@ BOT_USERNAME = 'TasklyX_BD_Bot'
 bot = telebot.TeleBot(TOKEN, parse_mode=None)
 
 SETTINGS = {
-    'task1_name': '🐦 Twitter_2fa (auth_token)',
-    'task2_name': '🐦 Twitter (2FA)',
+    'task1_name': 'Twitter_2fa_auth_token',
+    'task2_name': 'Twitter_2FA_Only',
     'reward_tw_token': 0.03,    
     'reward_tw_2fa': 0.03,      
     'usd_to_bdt': 125.0,        
@@ -51,7 +51,7 @@ SETTINGS = {
     'auto_report_task': 'ALL',
     'auto_report_interval': 30, 
     'auto_approve_pct': 80.0,
-    'custom_check_reject_pct': 3.0,  
+    'custom_check_reject_pct': 3.5,  
     'custom_check_reject_enabled': True,
     'admin_pin': '4875',        
     'top_enabled': True,
@@ -82,6 +82,10 @@ active_mails = {}
 user_steps = {}       
 user_acc_data = {}   
 submitted_accounts = []  
+rejected_accounts_db = []
+rejected_history_db = set()
+used_emails_db = set()
+used_codes_db = set()
 withdraw_requests = []  
 blocked_users = set()
 lifetime_usernames = set() 
@@ -245,31 +249,45 @@ def video_mgmt_keyboard():
     markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
     return markup
 
+def clear_user_chat_session(user_id, chat_messages_dict):
+    if user_id in chat_messages_dict:
+        for msg_id in chat_messages_dict[user_id]:
+            try:
+                bot.delete_message(user_id, msg_id)
+            except Exception:
+                pass
+        chat_messages_dict[user_id] = []
+
 def alter_string_slightly(text_str):
-    s = str(text_str)
+    s = str(text_str).strip()
     if not s or len(s) <= 2:
-        return s + "x" if s else "x"
+        return s + "x"
+    
+    val_list = list(s)
+    
+    # প্রথম এবং শেষ অক্ষর বাদ দিয়ে শুধুমাত্র মাঝের অক্ষরগুলোর মধ্য থেকে ১টি অক্ষর পরিবর্তন করা
+    middle_indices = list(range(1, len(val_list) - 1))
     
     hash_val = int(hashlib.md5(s.encode('utf-8')).hexdigest(), 16)
-    val_list = list(s)
-    idx = 1 + (hash_val % (len(val_list) - 2)) if len(val_list) > 2 else 0
+    idx = middle_indices[hash_val % len(middle_indices)]
+    
     current_char = val_list[idx]
     
-    allowed_chars = string.ascii_letters + string.digits
-    char_idx = (hash_val // 100) % len(allowed_chars)
-    new_char = allowed_chars[char_idx]
-    if new_char == current_char:
-        new_char = allowed_chars[(char_idx + 1) % len(allowed_chars)]
+    # ছোট হাতের বর্ণ, বড় হাতের বর্ণ বা ডিজিটের মধ্যে ১টি নতুন ক্যারেক্টার বেছে নেওয়া
+    if current_char.isdigit():
+        allowed = [c for c in string.digits if c != current_char]
+    elif current_char.isupper():
+        allowed = [c for c in string.ascii_uppercase if c != current_char]
+    else:
+        allowed = [c for c in string.ascii_lowercase if c != current_char]
         
+    if not allowed:
+        allowed = [c for c in string.ascii_letters + string.digits if c != current_char]
+        
+    new_char = allowed[hash_val % len(allowed)]
     val_list[idx] = new_char
+    
     return "".join(val_list)
-
-def is_consistently_rejected(username, pct):
-    if not username or pct <= 0:
-        return False
-    clean_u = username.strip().lower()
-    hash_val = int(hashlib.md5(clean_u.encode('utf-8')).hexdigest(), 16)
-    return (hash_val % 100) < float(pct)
 
 def generate_unique_human_username():
     f_name = random.choice(FIRST_NAMES)
@@ -310,23 +328,24 @@ def get_mailtm_domain():
     return "gmail.com"
 
 def create_mailtm_account(task_name=None):
-    domain = get_mailtm_domain()
-    username = generate_unique_human_username()
-    email = f"{username}@{domain}"
-    password = generate_password(task_name)
-
-    try:
-        payload = {"address": email, "password": password}
-        res = requests.post("https://api.mail.tm/accounts", json=payload, timeout=7)
-        if res.status_code in [200, 201]:
-            token_res = requests.post("https://api.mail.tm/token", json=payload, timeout=7)
-            if token_res.status_code == 200:
-                token = token_res.json().get('token')
-                return {'email': email, 'username': username, 'token': token, 'type': 'mailtm', 'password': password}
-    except Exception:
-        pass
-    
-    return {'email': email, 'username': username, 'token': 'dummy_token', 'type': 'fallback', 'password': password}
+    for _ in range(5):
+        domain = get_mailtm_domain()
+        username = generate_unique_human_username()
+        email = f"{username}@{domain}"
+        if email.lower() not in used_emails_db:
+            password = generate_password(task_name)
+            try:
+                payload = {"address": email, "password": password}
+                res = requests.post("https://api.mail.tm/accounts", json=payload, timeout=7)
+                if res.status_code in [200, 201]:
+                    token_res = requests.post("https://api.mail.tm/token", json=payload, timeout=7)
+                    if token_res.status_code == 200:
+                        token = token_res.json().get('token')
+                        used_emails_db.add(email.lower())
+                        return {'email': email, 'username': username, 'token': token, 'type': 'mailtm', 'password': password}
+            except Exception:
+                pass
+    return None
 
 def fetch_twitter_code(token):
     if token == 'dummy_token':
@@ -349,7 +368,10 @@ def fetch_twitter_code(token):
                             text_content = str(data.get('text', '')) + " " + str(data.get('subject', '')) + " " + str(data.get('intro', ''))
                             codes = re.findall(r'\b\d{6}\b', text_content)
                             if codes:
-                                return codes[0]
+                                code = codes[0]
+                                if code not in used_codes_db:
+                                    used_codes_db.add(code)
+                                    return code
         except Exception:
             pass
         time.sleep(3)
@@ -515,6 +537,8 @@ def reject_single_account(acc):
     if acc.get('status') == 'pending':
         acc['status'] = 'rejected'
         target_uid = acc['user_id']
+        if acc.get('username'):
+            rejected_history_db.add(acc.get('username').lower().strip())
         try:
             bot.send_message(target_uid, f"❌ Your submitted account ({acc.get('username')}) has been rejected by admin.")
         except Exception:
@@ -586,7 +610,7 @@ def start(message):
 
 @bot.message_handler(content_types=['text', 'photo', 'video', 'document'], func=lambda m: True)
 def handle_all_messages(message):
-    global submitted_accounts, withdraw_requests, videos_list, downloaded_status, blocked_users, lifetime_usernames
+    global submitted_accounts, rejected_accounts_db, withdraw_requests, videos_list, downloaded_status, blocked_users, lifetime_usernames, rejected_history_db
     user_id = message.from_user.id
     if user_id in blocked_users:
         return
@@ -705,48 +729,104 @@ def handle_all_messages(message):
                 bot.send_message(ADMIN_ID, "❌ No valid accounts found!", reply_markup=admin_panel_keyboard())
                 return
 
-            msg = bot.send_message(ADMIN_ID, f"⏳ Real Live Checking {len(rows_data)} accounts...")
+            msg = bot.send_message(ADMIN_ID, f"⏳ Checking {len(rows_data)} accounts for duplicates and live status...")
             
             good_accounts = []
             suspended_accounts = []
-            
+            seen_in_this_file = set()
+
+            all_known_usernames = set(lifetime_usernames)
+            all_known_tokens = set()
+            all_known_2fa = set()
+
+            for acc in submitted_accounts:
+                if acc.get('username'):
+                    all_known_usernames.add(acc.get('username').lower().strip())
+                if acc.get('token') and acc.get('token') != 'N/A':
+                    all_known_tokens.add(acc.get('token').strip())
+                if acc.get('2fa') and acc.get('2fa') != 'N/A':
+                    all_known_2fa.add(acc.get('2fa').upper().strip())
+
             for item in rows_data:
                 uname = item['username']
-                if not uname:
+                clean_uname = uname.lower().strip() if uname else ''
+                row_str = " ".join([str(x) for x in item['row']])
+                
+                token_found = extract_auth_token(row_str)
+                twofa_matches = re.findall(r'\b[A-Z0-9]{16}\b', row_str.upper())
+                twofa_found = twofa_matches[0] if twofa_matches else None
+
+                if clean_uname and clean_uname in rejected_history_db:
+                    item_copy = {
+                        'username': item.get('username'),
+                        'row': list(item.get('row', []))
+                    }
+                    if len(item_copy['row']) > 0:
+                        item_copy['row'][0] = alter_string_slightly(item_copy['row'][0])
+                    if len(item_copy['row']) > 1:
+                        item_copy['row'][1] = alter_string_slightly(item_copy['row'][1])
+                    suspended_accounts.append(item_copy)
                     continue
-                st = check_status_by_username(uname)
-                if st == 'active':
-                    good_accounts.append(item)
+
+                is_dup = False
+                if uname and clean_uname in all_known_usernames:
+                    is_dup = True
+                if token_found and token_found in all_known_tokens:
+                    is_dup = True
+                if twofa_found and twofa_found in all_known_2fa:
+                    is_dup = True
+
+                identifier = clean_uname + '_' + (token_found if token_found else '')
+                if identifier in seen_in_this_file:
+                    is_dup = True
+                else:
+                    seen_in_this_file.add(identifier)
+
+                if is_dup:
+                    suspended_accounts.append(item)
+                    continue
+
+                if uname:
+                    st = check_status_by_username(uname)
+                    if st == 'active':
+                        good_accounts.append(item)
+                        all_known_usernames.add(clean_uname)
+                        if token_found: all_known_tokens.add(token_found)
+                        if twofa_found: all_known_2fa.add(twofa_found)
+                    else:
+                        suspended_accounts.append(item)
                 else:
                     suspended_accounts.append(item)
                 time.sleep(0.05)
 
-            pct = SETTINGS.get('custom_check_reject_pct', 3.0)
+            pct = SETTINGS.get('custom_check_reject_pct', 3.5)
             reject_enabled = SETTINGS.get('custom_check_reject_enabled', True)
 
-            new_good_accounts = []
-            for item in good_accounts:
-                uname = item['username']
-                if reject_enabled and pct > 0 and is_consistently_rejected(uname, pct):
-                    old_uname = item['username']
-                    new_uname = alter_string_slightly(old_uname)
-                    item['username'] = new_uname
-                    
-                    if item['row']:
-                        item['row'][0] = new_uname
-                        if len(item['row']) > 1 and item['row'][1]:
-                            item['row'][1] = alter_string_slightly(item['row'][1])
-                        elif len(item['row']) == 1:
-                            line_parts = re.split(r'[:|,\s\t]+', item['row'][0])
-                            if len(line_parts) >= 2:
-                                line_parts[0] = new_uname
-                                line_parts[1] = alter_string_slightly(line_parts[1])
-                                item['row'][0] = ":".join(line_parts)
+            if reject_enabled and pct > 0 and good_accounts:
+                total_good = len(good_accounts)
+                force_reject_count = int(round(total_good * (pct / 100.0)))
+                force_reject_count = max(0, min(force_reject_count, total_good))
 
-                    suspended_accounts.append(item)
-                else:
-                    new_good_accounts.append(item)
-            good_accounts = new_good_accounts
+                if force_reject_count > 0:
+                    selected_to_reject = random.sample(good_accounts, force_reject_count)
+                    new_good_accs = []
+                    for item in good_accounts:
+                        if item in selected_to_reject:
+                            if item.get('username'):
+                                rejected_history_db.add(item.get('username').lower().strip())
+                                
+                            item_copy = {
+                                'username': item.get('username'),
+                                'row': list(item.get('row', []))
+                            }
+                            if len(item_copy['row']) > 0:
+                                item_copy['row'][0] = alter_string_slightly(item_copy['row'][0])
+                            if len(item_copy['row']) > 1:
+                                item_copy['row'][1] = alter_string_slightly(item_copy['row'][1])
+                            suspended_accounts.append(item_copy)
+                        else:
+                            new_good_accs.append(item)
+                    good_accounts = new_good_accs
 
             bot.delete_message(ADMIN_ID, msg.message_id)
 
@@ -773,10 +853,10 @@ def handle_all_messages(message):
             file_good.name = "good_twitter_accounts.xlsx"
 
             summary_text = (
-                f"📊 **Custom Bulk Username Check Summary:**\n"
+                f"📊 **Custom Bulk Username & Duplicate Check Summary:**\n"
                 f"• Total Checked: `{len(rows_data)}`\n"
                 f"• Good/Active: `{len(good_accounts)}`\n"
-                f"• Suspended/Dead: `{len(suspended_accounts)}`"
+                f"• Rejected (Duplicate/Suspended): `{len(suspended_accounts)}`"
             )
             bot.send_message(ADMIN_ID, summary_text, parse_mode="Markdown")
 
@@ -786,16 +866,16 @@ def handle_all_messages(message):
             if suspended_accounts:
                 wb_sus = openpyxl.Workbook()
                 ws_sus = wb_sus.active
-                ws_sus.title = "Suspended_Accounts"
-                ws_sus.append(list(out_headers) + ["STATUS"])
+                ws_sus.title = "Rejected_Accounts"
+                ws_sus.append(list(out_headers) + ["REASON / STATUS"])
                 for acc in suspended_accounts:
-                    ws_sus.append(list(acc['row']) + ["Suspended / Dead"])
+                    ws_sus.append(list(acc['row']) + ["Rejected (Duplicate or Suspended)"])
                 
                 file_sus = io.BytesIO()
                 wb_sus.save(file_sus)
                 file_sus.seek(0)
                 file_sus.name = "suspended_twitter_accounts.xlsx"
-                bot.send_document(ADMIN_ID, file_sus, caption="🔴 **Suspended / Dead Accounts Excel**")
+                bot.send_document(ADMIN_ID, file_sus, caption="🔴 **Rejected / Suspended / Duplicate Accounts Excel**")
 
             bot.send_message(ADMIN_ID, "✅ Account check completed!", reply_markup=admin_panel_keyboard())
             return
@@ -1064,7 +1144,7 @@ def handle_all_messages(message):
                 SETTINGS['ref_commission_pct'] = pct
                 bot.send_message(ADMIN_ID, f"✅ Referral commission updated to: `{pct}%`", reply_markup=referral_mgmt_keyboard(), parse_mode="Markdown")
             except ValueError:
-                bot.send_message(ADMIN_ID, "❌ Please enter a valid number (e.g. 10 or 5.5):", reply_markup=referral_mgmt_keyboard())
+                bot.send_message(ADMIN_ID, "❌ Please enter a valid number (e.g. 10 or 15):", reply_markup=referral_mgmt_keyboard())
             return
 
         elif admin_step == 'set_top_reset_mins_input':
@@ -1156,7 +1236,7 @@ def handle_all_messages(message):
 
         elif text == "📥 Custom Username Check":
             user_steps[ADMIN_ID] = 'admin_awaiting_custom_usernames'
-            bot.send_message(ADMIN_ID, "📥 Send or upload the accounts file (`.xlsx` or text). The bot will use the **first column/line** as the Username and keep Password, 2FA, etc. in the output:", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel")))
+            bot.send_message(ADMIN_ID, "📥 Send or upload the accounts file (`.xlsx` or text). The bot will use the **first column/line** as Username and check for duplicates/dead accounts:", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel")))
             return
 
         elif text == "🔍 Check Accounts via Username":
@@ -1171,6 +1251,15 @@ def handle_all_messages(message):
             
             for acc in submitted_accounts:
                 uname = acc.get('username')
+                clean_u = uname.lower().strip() if uname else ''
+                
+                if clean_u and clean_u in rejected_history_db:
+                    item_copy = acc.copy()
+                    item_copy['username'] = alter_string_slightly(item_copy.get('username', ''))
+                    item_copy['password'] = alter_string_slightly(item_copy.get('password', ''))
+                    suspended_accounts.append(item_copy)
+                    continue
+
                 st = check_status_by_username(uname)
                 if st == 'active':
                     good_accounts.append(acc)
@@ -1178,20 +1267,28 @@ def handle_all_messages(message):
                     suspended_accounts.append(acc)
                 time.sleep(0.05)
 
-            pct = SETTINGS.get('custom_check_reject_pct', 3.0)
+            pct = SETTINGS.get('custom_check_reject_pct', 3.5)
             reject_enabled = SETTINGS.get('custom_check_reject_enabled', True)
 
-            new_good_accounts = []
-            for acc in good_accounts:
-                uname = acc.get('username')
-                if reject_enabled and pct > 0 and is_consistently_rejected(uname, pct):
-                    item_copy = acc.copy()
-                    item_copy['username'] = alter_string_slightly(item_copy.get('username', ''))
-                    item_copy['password'] = alter_string_slightly(item_copy.get('password', ''))
-                    suspended_accounts.append(item_copy)
-                else:
-                    new_good_accounts.append(acc)
-            good_accounts = new_good_accounts
+            if reject_enabled and pct > 0 and good_accounts:
+                total_good = len(good_accounts)
+                force_reject_count = int(round(total_good * (pct / 100.0)))
+                force_reject_count = max(0, min(force_reject_count, total_good))
+
+                if force_reject_count > 0:
+                    selected_to_reject = random.sample(good_accounts, force_reject_count)
+                    new_good_accs = []
+                    for acc in good_accounts:
+                        if acc in selected_to_reject:
+                            if acc.get('username'):
+                                rejected_history_db.add(acc.get('username').lower().strip())
+                            item_copy = acc.copy()
+                            item_copy['username'] = alter_string_slightly(item_copy.get('username', ''))
+                            item_copy['password'] = alter_string_slightly(item_copy.get('password', ''))
+                            suspended_accounts.append(item_copy)
+                        else:
+                            new_good_accs.append(acc)
+                    good_accounts = new_good_accs
 
             bot.delete_message(ADMIN_ID, msg.message_id)
 
@@ -1236,14 +1333,14 @@ def handle_all_messages(message):
             return
 
         elif text == "📊 Task 1 Excel":
-            filtered_accounts = [acc for acc in submitted_accounts if acc.get('task_name') == SETTINGS['task1_name'] or 'token' in str(acc.get('task_name')).lower() or 'auth' in str(acc.get('task_name')).lower()]
+            filtered_accounts = [acc for acc in submitted_accounts if acc.get('task_name') == SETTINGS['task1_name']]
             bot.send_message(ADMIN_ID, f"📊 **Task 1 Accounts Management**\nTotal Saved: `{len(filtered_accounts)}`", reply_markup=excel_task1_menu(), parse_mode="Markdown")
             return
 
         elif text == "📊 Download Excel: Task 1":
-            filtered_accounts = [acc for acc in submitted_accounts if acc.get('task_name') == SETTINGS['task1_name'] or 'token' in str(acc.get('task_name')).lower() or 'auth' in str(acc.get('task_name')).lower()]
+            filtered_accounts = [acc for acc in submitted_accounts if acc.get('task_name') == SETTINGS['task1_name']]
             if not filtered_accounts:
-                bot.send_message(ADMIN_ID, "❌ No accounts submitted for this task!", reply_markup=excel_task1_menu())
+                bot.send_message(ADMIN_ID, "❌ No accounts submitted for Task 1!", reply_markup=excel_task1_menu())
                 return
             
             downloaded_status['task1'] = True
@@ -1268,18 +1365,18 @@ def handle_all_messages(message):
             
             markup = telebot.types.InlineKeyboardMarkup()
             markup.add(telebot.types.InlineKeyboardButton("⚠️ Yes, Delete All", callback_data="conf_del_t1"), telebot.types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_del"))
-            bot.send_message(ADMIN_ID, "⚠️ Are you sure you want to delete all accounts for this task?", reply_markup=markup)
+            bot.send_message(ADMIN_ID, "⚠️ Are you sure you want to delete all Task 1 accounts?", reply_markup=markup)
             return
 
         elif text == "📊 Task 2 Excel (2FA)":
-            filtered_accounts = [acc for acc in submitted_accounts if acc.get('task_name') == SETTINGS['task2_name'] or '2fa' in str(acc.get('task_name')).lower()]
+            filtered_accounts = [acc for acc in submitted_accounts if acc.get('task_name') == SETTINGS['task2_name']]
             bot.send_message(ADMIN_ID, f"📊 **2FA Accounts Management**\nTotal Saved: `{len(filtered_accounts)}`", reply_markup=excel_2fa_menu(), parse_mode="Markdown")
             return
 
         elif text == "📊 Download Excel: 2FA":
-            filtered_accounts = [acc for acc in submitted_accounts if acc.get('task_name') == SETTINGS['task2_name'] or '2fa' in str(acc.get('task_name')).lower()]
+            filtered_accounts = [acc for acc in submitted_accounts if acc.get('task_name') == SETTINGS['task2_name']]
             if not filtered_accounts:
-                bot.send_message(ADMIN_ID, "❌ No accounts submitted for this task!", reply_markup=excel_2fa_menu())
+                bot.send_message(ADMIN_ID, "❌ No accounts submitted for Task 2!", reply_markup=excel_2fa_menu())
                 return
             
             downloaded_status['task2'] = True
@@ -1304,7 +1401,7 @@ def handle_all_messages(message):
             
             markup = telebot.types.InlineKeyboardMarkup()
             markup.add(telebot.types.InlineKeyboardButton("⚠️ Yes, Delete All", callback_data="conf_del_t2"), telebot.types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_del"))
-            bot.send_message(ADMIN_ID, "⚠️ Are you sure you want to delete all accounts for this task?", reply_markup=markup)
+            bot.send_message(ADMIN_ID, "⚠️ Are you sure you want to delete all Task 2 accounts?", reply_markup=markup)
             return
 
         elif text.startswith("Withdraw Sys:"):
@@ -1462,7 +1559,7 @@ def handle_all_messages(message):
 
         elif text == "📉 Percentage Reject Process":
             user_steps[ADMIN_ID] = 'admin_percentage_reject_input'
-            bot.send_message(ADMIN_ID, f"📉 Current Default Custom Check Reject Rate: `{SETTINGS.get('custom_check_reject_pct', 3.0)}%`\n\nSend the new percentage (%) of rejection rate (e.g., `2` for 2%, `5` for 5%):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel")), parse_mode="Markdown")
+            bot.send_message(ADMIN_ID, f"📉 Current Default Custom Check Reject Rate: `{SETTINGS.get('custom_check_reject_pct', 3.5)}%`\n\nSend the new percentage (%) of rejection rate (e.g., `2` for 2%, `5` for 5%):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel")), parse_mode="Markdown")
             return
 
         elif text == "🏆 Top Control":
@@ -1723,64 +1820,69 @@ def handle_all_messages(message):
         bot.send_message(user_id, "🎬 **Tutorial Videos:**\n\nClick button below:", reply_markup=markup, parse_mode="Markdown")
         return
 
-    elif text.startswith("🐦 " + SETTINGS['task1_name']) or text == SETTINGS['task1_name'] or text.startswith(SETTINGS['task1_name']):
+    elif text.startswith("🐦 ") or SETTINGS['task1_name'] in text:
         report_time = SETTINGS.get('task_report_timer_text', 'Every 30 minutes')
-        bot.send_message(user_id, f"⏳ Report Schedule: {report_time} ⏳\n\n📋 Task: {SETTINGS['task1_name']}\n\n📄 Description: 🔒 REQUIRED!\nYou must use the information provided by the Telegram bot to register.\n\n✍️ Report instruction:\nSubmit 2FA Key and Auth Token to complete.")
+        m1 = bot.send_message(user_id, f"⏳ Report Schedule: {report_time} ⏳\n\n📋 Task: {SETTINGS['task1_name']}\n\n📄 Description: 🔒 REQUIRED!\nYou must use the information provided by the Telegram bot to register.\n\n✍️ Report instruction:\nSubmit 2FA Key and Auth Token to complete.")
         msg = bot.send_message(user_id, "⏳ Ordering email, please wait...")
         mail_obj = create_mailtm_account(SETTINGS['task1_name'])
         if not mail_obj:
-            bot.edit_message_text("Server connection error, please try again.", user_id, msg.message_id)
+            bot.edit_message_text("Server connection error or email limit reached, please try again.", user_id, msg.message_id)
             return
         email, login_user, token, password_gen = mail_obj['email'], mail_obj['username'], mail_obj['token'], mail_obj['password']
         active_mails[user_id] = {'login': login_user, 'email': email, 'token': token}
-        user_acc_data[user_id] = {'task_type': 'task1_token', 'login': login_user, 'password': password_gen, 'email': email, 'task_name': SETTINGS['task1_name']}
+        user_acc_data[user_id] = {'task_type': 'task1_token', 'login': login_user, 'password': password_gen, 'email': email, 'task_name': SETTINGS['task1_name'], 'msg_ids': []}
         user_steps[user_id] = 'awaiting_email_code_request'
         bot.delete_message(user_id, msg.message_id)
         details_text = f"Login: `{login_user}`\nPassword: `{password_gen}`\nEmail: `{email}`"
-        bot.send_message(user_id, details_text, parse_mode="Markdown")
+        m2 = bot.send_message(user_id, details_text, parse_mode="Markdown")
         markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
         markup.row(telebot.types.KeyboardButton("📩 Get code"))
         markup.row(telebot.types.KeyboardButton("❌ Cancel"))
-        bot.send_message(user_id, "👉 Press the button to get the code or cancel the task:", reply_markup=markup)
+        m3 = bot.send_message(user_id, "👉 Press the button to get the code or cancel the task:", reply_markup=markup)
+        user_acc_data[user_id]['msg_ids'] = [m1.message_id, m2.message_id, m3.message_id]
         return
 
-    elif text.startswith("🔥 " + SETTINGS['task2_name']) or text == SETTINGS['task2_name'] or text.startswith(SETTINGS['task2_name']):
+    elif text.startswith("🔥 ") or SETTINGS['task2_name'] in text:
         report_time = SETTINGS.get('task_report_timer_text', 'Every 30 minutes')
-        bot.send_message(user_id, f"⏳ Report Schedule: {report_time} ⏳\n\n📋 Task: {SETTINGS['task2_name']}\n\n📄 Description: 🔒 REQUIRED!\nYou must use the information provided by the Telegram bot to register.\n\n✍️ Report instruction:\nSubmit 2FA Secret Key to get code.")
+        m1 = bot.send_message(user_id, f"⏳ Report Schedule: {report_time} ⏳\n\n📋 Task: {SETTINGS['task2_name']}\n\n📄 Description: 🔒 REQUIRED!\nYou must use the information provided by the Telegram bot to register.\n\n✍️ Report instruction:\nSubmit 2FA Secret Key to get code.")
         msg = bot.send_message(user_id, "⏳ Ordering email, please wait...")
         mail_obj = create_mailtm_account(SETTINGS['task2_name'])
         if not mail_obj:
-            bot.edit_message_text("Server connection error, please try again.", user_id, msg.message_id)
+            bot.edit_message_text("Server connection error or email limit reached, please try again.", user_id, msg.message_id)
             return
         email, login_user, token, password_gen = mail_obj['email'], mail_obj['username'], mail_obj['token'], mail_obj['password']
         active_mails[user_id] = {'login': login_user, 'email': email, 'token': token}
-        user_acc_data[user_id] = {'task_type': 'task2_2fa', 'login': login_user, 'password': password_gen, 'email': email, 'task_name': SETTINGS['task2_name']}
+        user_acc_data[user_id] = {'task_type': 'task2_2fa', 'login': login_user, 'password': password_gen, 'email': email, 'task_name': SETTINGS['task2_name'], 'msg_ids': []}
         user_steps[user_id] = 'awaiting_email_code_request'
         bot.delete_message(user_id, msg.message_id)
         details_text = f"Login: `{login_user}`\nPassword: `{password_gen}`\nEmail: `{email}`"
-        bot.send_message(user_id, details_text, parse_mode="Markdown")
+        m2 = bot.send_message(user_id, details_text, parse_mode="Markdown")
         markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
         markup.row(telebot.types.KeyboardButton("📩 Get code"))
         markup.row(telebot.types.KeyboardButton("❌ Cancel"))
-        bot.send_message(user_id, "👉 Press the button to get the code or cancel the task:", reply_markup=markup)
+        m3 = bot.send_message(user_id, "👉 Press the button to get the code or cancel the task:", reply_markup=markup)
+        user_acc_data[user_id]['msg_ids'] = [m1.message_id, m2.message_id, m3.message_id]
         return
 
     elif text in ["Get code", "📩 Get code"]:
         if user_id not in active_mails:
             bot.send_message(user_id, "No active task found!", reply_markup=main_keyboard(user_id))
             return
-        bot.send_message(user_id, "Searching for Twitter email, please wait...")
+        msg_wait = bot.send_message(user_id, "Searching for Twitter email, please wait...")
         mail_info = active_mails[user_id]
         otp_code = fetch_twitter_code(mail_info['token'])
+        bot.delete_message(user_id, msg_wait.message_id)
         markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
         markup.row(telebot.types.KeyboardButton("📩 Get code"))
         markup.row(telebot.types.KeyboardButton("❌ Cancel"))
         if otp_code:
-            bot.send_message(user_id, f"`{otp_code}`", parse_mode="Markdown")
-            bot.send_message(user_id, "Tap code above to copy.\n\n🔑 Please enter your 2FA key to get the code:", reply_markup=markup)
+            m_code = bot.send_message(user_id, f"`{otp_code}`", parse_mode="Markdown")
+            m_prompt = bot.send_message(user_id, "Tap code above to copy.\n\n🔑 Please enter your 2FA key to get the code:", reply_markup=markup)
+            if user_id in user_acc_data and 'msg_ids' in user_acc_data[user_id]:
+                user_acc_data[user_id]['msg_ids'].extend([m_code.message_id, m_prompt.message_id])
             user_steps[user_id] = 'awaiting_2fa_key_input'
         else:
-            bot.send_message(user_id, "Twitter code not received yet, please wait 5-10 seconds and click 'Get code' again.", reply_markup=markup)
+            bot.send_message(user_id, "Twitter code not received yet or this code was already used! Please wait 5-10 seconds and click 'Get code' again.", reply_markup=markup)
         return
 
     step = user_steps.get(user_id)
@@ -1868,6 +1970,32 @@ def handle_all_messages(message):
         if len(clean_key) != 16:
             bot.send_message(user_id, f"❌ Error! Twitter 2FA Secret Key must be exactly **16 characters**. You entered {len(clean_key)} characters. Try again:")
             return
+        
+        is_duplicate = False
+        for prev_acc in submitted_accounts + rejected_accounts_db:
+            if prev_acc.get('2fa', '').upper() == clean_key:
+                is_duplicate = True
+                break
+
+        if is_duplicate:
+            rejected_entry = {
+                'task_name': user_acc_data.get(user_id, {}).get('task_name', 'Task'),
+                'username': user_acc_data.get(user_id, {}).get('login', 'duplicate_user'),
+                'password': user_acc_data.get(user_id, {}).get('password', 'N/A'),
+                '2fa': clean_key,
+                'token': 'N/A',
+                'user_id': user_id,
+                'status': 'rejected',
+                'time': time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            rejected_accounts_db.append(rejected_entry)
+            clear_user_chat_session(user_id, {user_id: user_acc_data.get(user_id, {}).get('msg_ids', [])})
+            bot.send_message(user_id, "❌ This 2FA Secret Key has already been submitted! Account automatically rejected.", reply_markup=main_keyboard(user_id))
+            active_mails.pop(user_id, None)
+            user_steps.pop(user_id, None)
+            user_acc_data.pop(user_id, None)
+            return
+
         try:
             totp = pyotp.TOTP(clean_key)
             current_otp = totp.now()
@@ -1882,19 +2010,50 @@ def handle_all_messages(message):
             user_steps[user_id] = 'awaiting_auth_token_input'
             markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
             markup.row(telebot.types.KeyboardButton("❌ Cancel"))
-            bot.send_message(user_id, f"`{current_otp}`", parse_mode="Markdown")
-            bot.send_message(user_id, "📋 Your one-time code:\n\n👆 Tap the code to copy\n\nPlease send the account auth_token / cookies:", reply_markup=markup)
+            m_code = bot.send_message(user_id, f"`{current_otp}`", parse_mode="Markdown")
+            m_prompt = bot.send_message(user_id, "📋 Your one-time code:\n\n👆 Tap the code to copy\n\nPlease send the account auth_token / cookies:", reply_markup=markup)
+            if 'msg_ids' in user_acc_data[user_id]:
+                user_acc_data[user_id]['msg_ids'].extend([m_code.message_id, m_prompt.message_id])
 
         elif task_type == 'task2_2fa':
             user_steps[user_id] = 'awaiting_final_confirmation'
             markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
             markup.row(telebot.types.KeyboardButton("✅ Confirm"), telebot.types.KeyboardButton("❌ Cancel"))
-            bot.send_message(user_id, f"`{current_otp}`", parse_mode="Markdown")
-            bot.send_message(user_id, "📋 Your one-time code:\n\n👆 Tap the code to copy\n\nPlease press **✅ Confirm** or **❌ Cancel**:", reply_markup=markup, parse_mode="Markdown")
+            m_code = bot.send_message(user_id, f"`{current_otp}`", parse_mode="Markdown")
+            m_prompt = bot.send_message(user_id, "📋 Your one-time code:\n\n👆 Tap the code to copy\n\nPlease press **✅ Confirm** or **❌ Cancel**:", reply_markup=markup, parse_mode="Markdown")
+            if 'msg_ids' in user_acc_data[user_id]:
+                user_acc_data[user_id]['msg_ids'].extend([m_code.message_id, m_prompt.message_id])
         return
 
     elif step == 'awaiting_auth_token_input':
         extracted_token = extract_auth_token(text)
+
+        is_duplicate = False
+        for prev_acc in submitted_accounts + rejected_accounts_db:
+            if prev_acc.get('token') and prev_acc.get('token') != 'N/A' and prev_acc.get('token') == extracted_token:
+                is_duplicate = True
+                break
+
+        if is_duplicate:
+            acc_data = user_acc_data.get(user_id, {})
+            rejected_entry = {
+                'task_name': acc_data.get('task_name', 'Task'),
+                'username': acc_data.get('login', 'duplicate_user'),
+                'password': acc_data.get('password', 'N/A'),
+                '2fa': acc_data.get('2fa', 'N/A'),
+                'token': extracted_token,
+                'user_id': user_id,
+                'status': 'rejected',
+                'time': time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            rejected_accounts_db.append(rejected_entry)
+            clear_user_chat_session(user_id, {user_id: acc_data.get('msg_ids', [])})
+            bot.send_message(user_id, "❌ This Auth Token has already been submitted! Account automatically rejected.", reply_markup=main_keyboard(user_id))
+            active_mails.pop(user_id, None)
+            user_steps.pop(user_id, None)
+            user_acc_data.pop(user_id, None)
+            return
+
         user_acc_data[user_id]['token'] = extracted_token
         acc_data = user_acc_data.get(user_id, {})
         acc_entry = {
@@ -1918,6 +2077,7 @@ def handle_all_messages(message):
         except Exception:
             pass
 
+        clear_user_chat_session(user_id, {user_id: acc_data.get('msg_ids', [])})
         bot.send_message(user_id, "✅ Account submitted successfully! Waiting for admin approval.", reply_markup=main_keyboard(user_id))
         active_mails.pop(user_id, None)
         user_steps.pop(user_id, None)
@@ -1948,6 +2108,7 @@ def handle_all_messages(message):
             except Exception:
                 pass
 
+            clear_user_chat_session(user_id, {user_id: acc_data.get('msg_ids', [])})
             bot.send_message(user_id, "✅ Account submitted successfully! Waiting for admin approval.", reply_markup=main_keyboard(user_id))
             active_mails.pop(user_id, None)
             user_steps.pop(user_id, None)
@@ -1961,7 +2122,7 @@ def handle_all_messages(message):
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callbacks(call):
-    global submitted_accounts, withdraw_requests, videos_list, downloaded_status, blocked_users
+    global submitted_accounts, rejected_accounts_db, withdraw_requests, videos_list, downloaded_status, blocked_users, rejected_history_db
     data = call.data
     user_id = call.from_user.id
 
@@ -1994,7 +2155,7 @@ def handle_callbacks(call):
 
     elif data == "conf_del_t1":
         before_count = len(submitted_accounts)
-        submitted_accounts[:] = [acc for acc in submitted_accounts if acc.get('task_name') != SETTINGS['task1_name'] and 'token' not in str(acc.get('task_name')).lower() and 'auth' not in str(acc.get('task_name')).lower()]
+        submitted_accounts[:] = [acc for acc in submitted_accounts if acc.get('task_name') != SETTINGS['task1_name']]
         deleted_count = before_count - len(submitted_accounts)
         downloaded_status['task1'] = False
         bot.answer_callback_query(call.id, f"Deleted {deleted_count} accounts!")
@@ -2005,12 +2166,12 @@ def handle_callbacks(call):
 
     elif data == "conf_del_t2":
         before_count = len(submitted_accounts)
-        submitted_accounts[:] = [acc for acc in submitted_accounts if acc.get('task_name') != SETTINGS['task2_name'] and '2fa' not in str(acc.get('task_name')).lower()]
+        submitted_accounts[:] = [acc for acc in submitted_accounts if acc.get('task_name') != SETTINGS['task2_name']]
         deleted_count = before_count - len(submitted_accounts)
         downloaded_status['task2'] = False
         bot.answer_callback_query(call.id, f"Deleted {deleted_count} accounts!")
         try:
-            bot.edit_message_text(f"🗑️ Successfully deleted `{deleted_count}` 2FA accounts and reset status.", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+            bot.edit_message_text(f"🗑️ Successfully deleted `{deleted_count}` Task 2 accounts and reset status.", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
         except Exception:
             pass
 
