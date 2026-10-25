@@ -24,7 +24,7 @@ def run_web():
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
 
-TOKEN = '8666711380:AAGLnSP2rzflGpIb1gyPNcegOcXWF7yO_Xg'
+TOKEN = '8666711380:AAEtA7_2DYrnNVwoal1nZj3H4XVupUv4w8Y'
 CHANNEL_USERNAME = '@taandob7'
 ADMIN_ID = 8702921423
 BOT_USERNAME = 'TasklyX_BD_Bot'
@@ -53,6 +53,7 @@ SETTINGS = {
     'auto_approve_pct': 80.0,
     'custom_check_reject_pct': 3.5,  
     'custom_check_reject_enabled': True,
+    'extractor_colon_enabled': True,  
     'admin_pin': '4875',        
     'top_enabled': True,
     'top_reset_mode': 'daily_10pm', 
@@ -138,7 +139,7 @@ def tasks_keyboard():
 def admin_panel_keyboard():
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row(telebot.types.KeyboardButton("📋 Pending Accounts"), telebot.types.KeyboardButton("📤 Withdraw Requests"))
-    markup.row(telebot.types.KeyboardButton("🏆 Top Control"), telebot.types.KeyboardButton("🔍 Search UID/Username"))
+    markup.row(telebot.types.KeyboardButton("🔑 Extract Auth Token from Sheet"), telebot.types.KeyboardButton("🔍 Search UID/Username"))
     markup.row(telebot.types.KeyboardButton("⚡ Batch Approve / Percentage"), telebot.types.KeyboardButton("🛠️ Task Control"))
     markup.row(telebot.types.KeyboardButton("💰 Change Price"), telebot.types.KeyboardButton("✏️ Change Task Names"))
     markup.row(telebot.types.KeyboardButton("🔐 Password Management"), telebot.types.KeyboardButton("⚙️ Payment Methods"))
@@ -146,8 +147,7 @@ def admin_panel_keyboard():
     markup.row(telebot.types.KeyboardButton("📢 Broadcast Message"), telebot.types.KeyboardButton("🎬 Video Management"))
     markup.row(telebot.types.KeyboardButton("📊 Task 1 Excel"), telebot.types.KeyboardButton("📊 Task 2 Excel (2FA)"))
     markup.row(telebot.types.KeyboardButton("🔍 Check Accounts via Username"), telebot.types.KeyboardButton("📥 Custom Username Check"))
-    markup.row(telebot.types.KeyboardButton("📊 Database Stats"))
-    markup.row(telebot.types.KeyboardButton("🏠 Main Menu"))
+    markup.row(telebot.types.KeyboardButton("📊 Database Stats"), telebot.types.KeyboardButton("🏠 Main Menu"))
     return markup
 
 def database_stats_keyboard():
@@ -264,8 +264,6 @@ def alter_string_slightly(text_str):
         return s + "x"
     
     val_list = list(s)
-    
-    # প্রথম এবং শেষ অক্ষর বাদ দিয়ে শুধুমাত্র মাঝের অক্ষরগুলোর মধ্য থেকে ১টি অক্ষর পরিবর্তন করা
     middle_indices = list(range(1, len(val_list) - 1))
     
     hash_val = int(hashlib.md5(s.encode('utf-8')).hexdigest(), 16)
@@ -273,7 +271,6 @@ def alter_string_slightly(text_str):
     
     current_char = val_list[idx]
     
-    # ছোট হাতের বর্ণ, বড় হাতের বর্ণ বা ডিজিটের মধ্যে ১টি নতুন ক্যারেক্টার বেছে নেওয়া
     if current_char.isdigit():
         allowed = [c for c in string.digits if c != current_char]
     elif current_char.isupper():
@@ -721,6 +718,65 @@ def handle_all_messages(message):
             bot.send_message(ADMIN_ID, "✅ Filtering and splitting completed successfully!", reply_markup=database_stats_keyboard())
             return
 
+        elif admin_step == 'admin_awaiting_extract_cookies':
+            rows_data = parse_full_accounts_file(message)
+            user_steps.pop(ADMIN_ID, None)
+            
+            if not rows_data:
+                bot.send_message(ADMIN_ID, "❌ ফাইল বা টেক্সটে কোনো ডাটা পাওয়া যায়নি!", reply_markup=admin_panel_keyboard())
+                return
+
+            msg = bot.send_message(ADMIN_ID, f"⏳ {len(rows_data)} টি একাউন্ট থেকে Auth Token এক্সট্র্যাক্ট করা হচ্ছে, অপেক্ষা করুন...")
+            
+            extracted_rows = []
+            add_colon = SETTINGS.get('extractor_colon_enabled', True)
+            
+            for item in rows_data:
+                row = item['row']
+                full_line = " ".join([str(x) for x in row])
+                
+                username = str(row[0]).replace(":", "").strip() if len(row) > 0 and row[0] is not None else ""
+                password = str(row[1]).replace(":", "").strip() if len(row) > 1 and row[1] is not None else ""
+                two_fa = str(row[2]).replace(":", "").strip() if len(row) > 2 and row[2] is not None else ""
+                
+                auth_token = extract_auth_token(full_line)
+                if not auth_token or auth_token in [username, password, two_fa]:
+                    cookies_text = row[3] if len(row) > 3 else full_line
+                    auth_token = extract_auth_token(cookies_text)
+                
+                if add_colon:
+                    u_val = f"{username}:" if username else ""
+                    p_val = f"{password}:" if password else ""
+                    t_val = f"{two_fa}:" if two_fa else ""
+                else:
+                    u_val = username
+                    p_val = password
+                    t_val = two_fa
+                
+                extracted_rows.append([u_val, p_val, t_val, auth_token])
+
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Extracted_Tokens"
+            ws.append(["USERNAME", "PASSWORD", "2FA KEY", "AUTH TOKEN"])
+            
+            for r in extracted_rows:
+                ws.append(r)
+            
+            file_stream = io.BytesIO()
+            wb.save(file_stream)
+            file_stream.seek(0)
+            file_stream.name = "extracted_auth_token_accounts.xlsx"
+
+            bot.delete_message(ADMIN_ID, msg.message_id)
+            bot.send_document(
+                ADMIN_ID, 
+                file_stream, 
+                caption=f"✅ **Auth Token Extraction সম্পন্ন হয়েছে!**\n\n• মোট প্রসেসড একাউন্ট: `{len(extracted_rows)}`\n• Colons (:): `{'ON' if add_colon else 'OFF'}`",
+                reply_markup=admin_panel_keyboard()
+            )
+            return
+
         elif admin_step == 'admin_awaiting_custom_usernames':
             rows_data = parse_full_accounts_file(message)
             user_steps.pop(ADMIN_ID, None)
@@ -757,15 +813,7 @@ def handle_all_messages(message):
                 twofa_found = twofa_matches[0] if twofa_matches else None
 
                 if clean_uname and clean_uname in rejected_history_db:
-                    item_copy = {
-                        'username': item.get('username'),
-                        'row': list(item.get('row', []))
-                    }
-                    if len(item_copy['row']) > 0:
-                        item_copy['row'][0] = alter_string_slightly(item_copy['row'][0])
-                    if len(item_copy['row']) > 1:
-                        item_copy['row'][1] = alter_string_slightly(item_copy['row'][1])
-                    suspended_accounts.append(item_copy)
+                    suspended_accounts.append(item)
                     continue
 
                 is_dup = False
@@ -802,7 +850,8 @@ def handle_all_messages(message):
             pct = SETTINGS.get('custom_check_reject_pct', 3.5)
             reject_enabled = SETTINGS.get('custom_check_reject_enabled', True)
 
-            if reject_enabled and pct > 0 and good_accounts:
+            # শর্ত: ৩০টির কম অ্যাকাউন্ট হলে ভালো অ্যাকাউন্ট থেকে র্যান্ডম রিজেক্ট করা হবে না
+            if reject_enabled and pct > 0 and good_accounts and len(rows_data) >= 30:
                 total_good = len(good_accounts)
                 force_reject_count = int(round(total_good * (pct / 100.0)))
                 force_reject_count = max(0, min(force_reject_count, total_good))
@@ -814,14 +863,15 @@ def handle_all_messages(message):
                         if item in selected_to_reject:
                             if item.get('username'):
                                 rejected_history_db.add(item.get('username').lower().strip())
-                                
+                            
+                            # ইউজারনেম এবং পাসওয়ার্ড উভয়েরই প্রথম ও শেষ অক্ষর ঠিক রেখে মধ্যের ১টি অক্ষর পরিবর্তন
                             item_copy = {
                                 'username': item.get('username'),
                                 'row': list(item.get('row', []))
                             }
-                            if len(item_copy['row']) > 0:
+                            if len(item_copy['row']) > 0 and item_copy['row'][0]:
                                 item_copy['row'][0] = alter_string_slightly(item_copy['row'][0])
-                            if len(item_copy['row']) > 1:
+                            if len(item_copy['row']) > 1 and item_copy['row'][1]:
                                 item_copy['row'][1] = alter_string_slightly(item_copy['row'][1])
                             suspended_accounts.append(item_copy)
                         else:
@@ -1234,6 +1284,22 @@ def handle_all_messages(message):
             bot.send_message(ADMIN_ID, "🔍 Send or upload the **New Submitted Sheet** (`.xlsx` or text/list) to filter against lifetime records:", reply_markup=database_stats_keyboard(), parse_mode="Markdown")
             return
 
+        elif text == "🔑 Extract Auth Token from Sheet":
+            user_steps[ADMIN_ID] = 'admin_awaiting_extract_cookies'
+            colon_st = "🟢 ON" if SETTINGS.get('extractor_colon_enabled', True) else "🔴 OFF"
+            markup = telebot.types.InlineKeyboardMarkup()
+            markup.add(telebot.types.InlineKeyboardButton(f"🔑 Colons: {colon_st}", callback_data="toggle_extractor_colon_inline"))
+            
+            bot.send_message(
+                ADMIN_ID, 
+                "🔑 **Auth Token Extractor Settings & Upload:**\n\n"
+                f"• Colons (:): `{colon_st}`\n\n"
+                "আপনার `username, password, 2fa key, cookies` সংবলিত ফাইলটি (`.xlsx` অথবা টেক্সট লিস্ট) এখানে আপলোড করুন। বট কুকিজ থেকে `auth_token` বের করে আপনাকে ক্লিন এক্সেল প্রদান করবে।", 
+                reply_markup=markup, 
+                parse_mode="Markdown"
+            )
+            return
+
         elif text == "📥 Custom Username Check":
             user_steps[ADMIN_ID] = 'admin_awaiting_custom_usernames'
             bot.send_message(ADMIN_ID, "📥 Send or upload the accounts file (`.xlsx` or text). The bot will use the **first column/line** as Username and check for duplicates/dead accounts:", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel")))
@@ -1254,10 +1320,7 @@ def handle_all_messages(message):
                 clean_u = uname.lower().strip() if uname else ''
                 
                 if clean_u and clean_u in rejected_history_db:
-                    item_copy = acc.copy()
-                    item_copy['username'] = alter_string_slightly(item_copy.get('username', ''))
-                    item_copy['password'] = alter_string_slightly(item_copy.get('password', ''))
-                    suspended_accounts.append(item_copy)
+                    suspended_accounts.append(acc)
                     continue
 
                 st = check_status_by_username(uname)
@@ -1270,7 +1333,8 @@ def handle_all_messages(message):
             pct = SETTINGS.get('custom_check_reject_pct', 3.5)
             reject_enabled = SETTINGS.get('custom_check_reject_enabled', True)
 
-            if reject_enabled and pct > 0 and good_accounts:
+            # শর্ত: মোট অ্যাকাউন্ট ৩০টির কম হলে র্যান্ডম রিজেক্ট করা হবে না
+            if reject_enabled and pct > 0 and good_accounts and len(submitted_accounts) >= 30:
                 total_good = len(good_accounts)
                 force_reject_count = int(round(total_good * (pct / 100.0)))
                 force_reject_count = max(0, min(force_reject_count, total_good))
@@ -1282,9 +1346,13 @@ def handle_all_messages(message):
                         if acc in selected_to_reject:
                             if acc.get('username'):
                                 rejected_history_db.add(acc.get('username').lower().strip())
+                            
+                            # ইউজারনেম এবং পাসওয়ার্ড উভয়েরই প্রথম ও শেষ অক্ষর ঠিক রেখে মধ্যের ১টি অক্ষর পরিবর্তন
                             item_copy = acc.copy()
-                            item_copy['username'] = alter_string_slightly(item_copy.get('username', ''))
-                            item_copy['password'] = alter_string_slightly(item_copy.get('password', ''))
+                            if item_copy.get('username'):
+                                item_copy['username'] = alter_string_slightly(item_copy.get('username'))
+                            if item_copy.get('password'):
+                                item_copy['password'] = alter_string_slightly(item_copy.get('password'))
                             suspended_accounts.append(item_copy)
                         else:
                             new_good_accs.append(acc)
@@ -1401,7 +1469,7 @@ def handle_all_messages(message):
             
             markup = telebot.types.InlineKeyboardMarkup()
             markup.add(telebot.types.InlineKeyboardButton("⚠️ Yes, Delete All", callback_data="conf_del_t2"), telebot.types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_del"))
-            bot.send_message(ADMIN_ID, "⚠️ Are you sure you want to delete all Task 2 accounts?", reply_markup=markup)
+            bot.send_message(ADMIN_ID, "⚠️ Are you sure you want to delete all 2FA accounts?", reply_markup=markup)
             return
 
         elif text.startswith("Withdraw Sys:"):
@@ -2129,6 +2197,27 @@ def handle_callbacks(call):
     if user_id != ADMIN_ID:
         return
 
+    if data == "toggle_extractor_colon_inline":
+        SETTINGS['extractor_colon_enabled'] = not SETTINGS.get('extractor_colon_enabled', True)
+        colon_st = "🟢 ON" if SETTINGS.get('extractor_colon_enabled', True) else "🔴 OFF"
+        markup = telebot.types.InlineKeyboardMarkup()
+        markup.add(telebot.types.InlineKeyboardButton(f"🔑 Colons: {colon_st}", callback_data="toggle_extractor_colon_inline"))
+        
+        bot.answer_callback_query(call.id, f"Colons toggled to {colon_st}")
+        try:
+            bot.edit_message_text(
+                "🔑 **Auth Token Extractor Settings & Upload:**\n\n"
+                f"• Colons (:): `{colon_st}`\n\n"
+                "আপনার `username, password, 2fa key, cookies` সংবলিত ফাইলটি (`.xlsx` অথবা টেক্সট লিস্ট) এখানে আপলোড করুন। বট কুকিজ থেকে `auth_token` বের করে আপনাকে ক্লিন এক্সেল প্রদান করবে।",
+                call.message.chat.id,
+                call.message.message_id,
+                reply_markup=markup,
+                parse_mode="Markdown"
+            )
+        except Exception:
+            pass
+        return
+
     if data.startswith("adm_block_"):
         target_uid = int(data.replace("adm_block_", ""))
         blocked_users.add(target_uid)
@@ -2273,13 +2362,13 @@ def handle_callbacks(call):
 
 if __name__ == '__main__':
     print("Bot is running...")
-    # ফ্লাস্ক সার্ভার ব্যাকগ্রাউন্ড থ্রেডে চলবে
     web_thread = threading.Thread(target=run_web)
     web_thread.daemon = True
     web_thread.start()
     
-    # টেলিগ্রাম বট পলিং শুরু করা
-    try:
-        bot.infinity_polling(skip_pending=True)
-    except Exception as e:
-        print(f"Polling error: {e}")
+    while True:
+        try:
+            bot.infinity_polling(timeout=60, long_polling_timeout=60)
+        except Exception as e:
+            print(f"Polling error: {e}")
+            time.sleep(5)
