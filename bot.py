@@ -21,6 +21,30 @@ users = {}
 active_mails = {}  
 blocked_users = set()
 
+# কোড না আসলে দেখানোর জন্য ফানি ২০টি ডায়লগের লিস্ট
+funny_empty_quotes = [
+    "⏳ যার বউ নেই তার কোড ও নাই! একটু অপেক্ষা করো বস।",
+    "⏳ মেইল বক্স একদম ফাঁকা, কোড আসার এখনো সময় হয়নি!",
+    "⏳ খালি হাত নিয়ে ঘরে ফেরা লাগবে না, আরেকটু ওয়েট করো!",
+    "⏳ কোড কি তোমার মামাবাড়ির আবদার নাকি? একটু পরে আবার চেক করো!",
+    "⏳ হ্যাকার সাব, আরেকটু ধৈর্য ধরুন! কোড এখনো চা খাচ্ছে!",
+    "⏳ নেটওয়ার্ক কি আপনার মতো ঘুমিয়ে পড়েছে নাকি? কোনো কোড নাই!",
+    "⏳ মেইল বক্সে ঝিঁঝিঁ পোকা ডাকছে, কোনো নতুন কোড পাওয়া যায়নি!",
+    "⏳ অপেক্ষা করুন... প্রেমের চিঠি আসতে একটু সময় তো লাগেই, কোডও তাই!",
+    "⏳ সার্ভার কি ঘাস খাচ্ছে? এখনো নতুন কোনো কোড পাঠাল না!",
+    "⏳ ধুর মিয়া! বারবার চেক করেন কেন? কোড আসলে নিজেই দৌড়ে আসবে!",
+    "⏳ ঘুম থেকে জেগে উঠুন বস, মেইল বক্স পুরো নিঝুমপুর!",
+    "⏳ একটু চা-নাস্তা খেয়ে আসেন, কোড আসতে এখনো দেরি আছে!",
+    "⏳ আপনার ইমেইলের ইনবক্স এখন শূন্য ঘোষণা করা হলো!",
+    "⏳ যারে দেখতে নারি তার চলন বাঁকা! কোডেরও দেখি একই দশা, আসতে চাচ্ছে না!",
+    "⏳ মনে হচ্ছে যে কোম্পানি কোড পাঠাবে, তারা দুপুরের ঘুমে গেছে!",
+    "⏳ পকেটে টাকা নেই আর কোডের জন্য টেনশন! একটু সবুর করুন!",
+    "⏳ সিগন্যাল উইক নাকি ব্রেন উইক? নতুন কোনো কোডের টিকিমানিও নাই!",
+    "⏳ ইমেইল অ্যাকাউন্ট তো খুললেন, কিন্তু কোড পাঠানোর লোক কই?",
+    "⏳ বস, একটু দম নিন। এত তাড়াহুড়ো করলে কি আর কোড চলে আসে!",
+    "⏳ ফাঁকা মাঠে গোল দেওয়ার চেষ্টা বাদ দিন, নতুন কোনো কোড আসেনি!"
+]
+
 def get_session():
     session = requests.Session()
     adapter = requests.adapters.HTTPAdapter(max_retries=5)
@@ -209,7 +233,6 @@ def gen_mail(message):
     email = ""
     token = ""
     
-    # Server busy এড়াতে সফলভাবে ইমেইল তৈরি না হওয়া পর্যন্ত লুপ চলতে থাকবে
     for _ in range(5):
         try:
             dom_res = session.get(f"{BASE_URL}/domains", timeout=10)
@@ -238,7 +261,6 @@ def gen_mail(message):
             time.sleep(1)
             
     if success:
-        # নতুন মেইল জেনারেট হলে আগের কোডের হিস্ট্রি ক্লিয়ার করার জন্য sent_codes সেট রাখা হলো
         active_mails[user_id] = {
             'email': email, 
             'token': token, 
@@ -255,7 +277,6 @@ def gen_mail(message):
         
         bot.edit_message_text(f"✅ <b>Your Temp Email:</b>\n\n<code>{email}</code>\n\n💬 <i>{selected_email_line}</i>", user_id, msg.message_id, parse_mode="HTML")
         
-        # ব্যাকগ্রাউন্ডে অটোমেটিক কোড চেক করার থ্রেড চালু রাখা হলো (বন্ধ হবে না, নতুন কোড আসলে সাথে সাথে পাঠাবে)
         threading.Thread(target=auto_check_otp, args=(user_id, token), daemon=True).start()
     else:
         bot.edit_message_text("⚠️ Server busy, try again.", user_id, msg.message_id)
@@ -269,7 +290,6 @@ def auto_check_otp(user_id, token):
     ]
     
     headers = {"Authorization": f"Bearer {token}"}
-    # পুরো সেশনে একটানা ১০ মিনিট (৩০ কোড চেক) ব্যাকগ্রাউন্ডে চেক করতে থাকবে যাতে একাধিক বা দ্বিতীয় কোডও অটো আসে
     for _ in range(300):
         if active_mails.get(user_id, {}).get('token') != token:
             break
@@ -280,7 +300,6 @@ def auto_check_otp(user_id, token):
                 if messages:
                     for msg in messages:
                         msg_id = msg['id']
-                        # প্রতিটি মেসেজ ফেচ করে ভেতরের কোড আলাদাভাবে চেক করা হচ্ছে
                         msg_detail = session.get(f"{BASE_URL}/messages/{msg_id}", headers=headers, timeout=5).json()
                         body = msg_detail.get('text', '') or msg_detail.get('intro', '')
                         
@@ -289,7 +308,6 @@ def auto_check_otp(user_id, token):
                             otp_code = codes[0]
                             user_mail_data = active_mails.get(user_id, {})
                             
-                            # যদি এই কোডটি ইতিপূর্বে পাঠানো না হয়ে থাকে, তবেই কেবল পাঠানো হবে (ডুপ্লিকেট রোধ)
                             if 'sent_codes' in user_mail_data and otp_code not in user_mail_data['sent_codes']:
                                 user_mail_data['sent_codes'].add(otp_code)
                                 selected_funny_line = random.choice(funny_quotes)
@@ -370,16 +388,12 @@ def check_otp(message):
                             break
                 
                 if not found_new:
-                    bot.send_message(user_id, "⌛ নতুন কোনো কোড আসেনি, আগের কোডটিই ইতোমধ্যে দেখানো হয়েছে।")
+                    # কোড না আসলে ২০টি ফানি লাইন থেকে রেন্ডম একটি লাইন সিলেক্ট করে পাঠানো হবে[span_3](start_span)[span_3](end_span)
+                    random_funny_empty = random.choice(funny_empty_quotes)
+                    bot.send_message(user_id, random_funny_empty, parse_mode="HTML")
             else:
-                empty_funny_lines = [
-                    "যার বউ নেই তার কোড ও নাই! একটু অপেক্ষা করো বস।",
-                    "মেইল বক্স একদম ফাঁকা, কোড আসার এখনো সময় হয়নি!",
-                    "খালি হাত নিয়ে ঘরে ফেরা লাগবে না, আরেকটু ওয়েট করো!",
-                    "কোড কি তোমার মামাবাড়ির আবদার নাকি? একটু পরে আবার চেক করো!"
-                ]
-                selected_empty_line = random.choice(empty_funny_lines)
-                bot.send_message(user_id, f"⌛ {selected_empty_line}")
+                random_funny_empty = random.choice(funny_empty_quotes)
+                bot.send_message(user_id, random_funny_empty, parse_mode="HTML")
         else:
             bot.send_message(user_id, "⚠️ টোকেন ম্যাচ করছে না! দয়া করে নতুন করে আবার একটি <code>Gen Mail</code> নিন।", parse_mode="HTML")
     except:
@@ -427,13 +441,4 @@ def withdraw(message):
         ]
         bot.send_message(user_id, random.choice(funny_low_balance_quotes), parse_mode="HTML")
     else:
-        funny_success_quotes = [
-            "🎉 বাহ্ বস! কোটিপতি হয়ে গেলা নাকি? তোমার উইথড্র রিকোয়েস্ট মহাশূন্যে পাঠিয়ে দেওয়া হয়েছে (টাকা জীবনেও পাবা না, জাস্ট মজা নিলাম)! 😎",
-            "🚀 উইথড্র সাকসেসফুল! হেলিকপ্টার রেডি আছে, গিয়ে টাকা নিয়ে আসো (অবশ্যই খপচ বা কল্পনায়)! 😂",
-            "🤑 বাম্পার অফার! তোমার উইথড্র রিকোয়েস্ট এডমিনের কাছে গেছে, এডমিন এখন থাইল্যান্ডে ঘাস খাচ্ছে ফিরে এসে দিবোনি!",
-            "🎉 অভিনন্দন! তুমি সফলভাবে ফেক ডলার উইথড্র করে ফেলছ! পকেট চেক করে দেখো এক টাকাও নাই! 🤣"
-        ]
-        bot.send_message(user_id, random.choice(funny_success_quotes), parse_mode="HTML")
-
-print("Bot is running...")
-bot.infinity_polling()
+        funny_su
