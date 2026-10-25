@@ -2273,13 +2273,13 @@ def handle_callbacks(call):
 
 if __name__ == '__main__':
     print("Bot is running...")
+    # ফ্লাস্ক সার্ভার ব্যাকগ্রাউন্ড থ্রেডে চলবে
     web_thread = threading.Thread(target=run_web)
     web_thread.daemon = True
     web_thread.start()
     
-    while True:
-        try:
-            bot.infinity_polling(timeout=60, long_polling_timeout=60)
-        except Exception as e:
-            print(f"Polling error: {e}")
-            time.sleep(5)
+    # টেলিগ্রাম বট পলিং শুরু করা
+    try:
+        bot.infinity_polling(skip_pending=True)
+    except Exception as e:
+        print(f"Polling error: {e}")
