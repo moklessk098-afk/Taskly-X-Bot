@@ -23,7 +23,7 @@ blocked_users = set()
 
 def get_session():
     session = requests.Session()
-    adapter = requests.adapters.HTTPAdapter(max_retries=3)
+    adapter = requests.adapters.HTTPAdapter(max_retries=5)
     session.mount('https://', adapter)
     return session
 
@@ -203,48 +203,55 @@ def gen_mail(message):
         bot.send_message(user_id, f"⚠️ Please join {CHANNEL_USERNAME} first!", reply_markup=check_join_keyboard())
         return
 
-    msg = bot.send_message(user_id, "🔄 Generating email...")
-    try:
-        dom_res = session.get(f"{BASE_URL}/domains", timeout=10)
-        if dom_res.status_code != 200:
-            bot.edit_message_text("⚠️ Server busy, try again.", user_id, msg.message_id)
-            return
-            
-        domains = dom_res.json().get('hydra:member', [])
-        if not domains:
-            bot.edit_message_text("❌ Domain service unavailable!", user_id, msg.message_id)
-            return
-        
-        domain = domains[0]['domain']
-        username = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
-        email = f"{username}@{domain}"
-        password = "Password123!"
-
-        res = session.post(f"{BASE_URL}/accounts", json={"address": email, "password": password}, timeout=10)
-        if res.status_code == 201:
-            token_res = session.post(f"{BASE_URL}/token", json={"address": email, "password": password}, timeout=10)
-            if token_res.status_code != 200:
-                bot.edit_message_text("⚠️ Server busy, try again.", user_id, msg.message_id)
-                return
+    msg = bot.send_message(user_id, "🔄 Generating email, please wait...")
+    
+    success = False
+    email = ""
+    token = ""
+    
+    # সফলভাবে ইমেইল তৈরি না হওয়া পর্যন্ত লুপ চলতে থাকবে (Server busy এড়াতে একাধিকবার চেষ্টা)
+    for _ in range(5):
+        try:
+            dom_res = session.get(f"{BASE_URL}/domains", timeout=10)
+            if dom_res.status_code != 200:
+                time.sleep(1)
+                continue
                 
-            token = token_res.json()['token']
+            domains = dom_res.json().get('hydra:member', [])
+            if not domains:
+                time.sleep(1)
+                continue
+            
+            domain = domains[0]['domain']
+            username = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+            email = f"{username}@{domain}"
+            password = "Password123!"
 
-            active_mails[user_id] = {'email': email, 'token': token, 'last_msg_id': None}
+            res = session.post(f"{BASE_URL}/accounts", json={"address": email, "password": password}, timeout=10)
+            if res.status_code == 201:
+                token_res = session.post(f"{BASE_URL}/token", json={"address": email, "password": password}, timeout=10)
+                if token_res.status_code == 200:
+                    token = token_res.json()['token']
+                    success = True
+                    break
+        except Exception:
+            time.sleep(1)
             
-            funny_email_quotes = [
-                "কি রাগ করলা? নাও টাটকা ইমেইল নাও!",
-                "হা হা, এই নাও তোমার কাঙ্ক্ষিত ইমেইল!",
-                "রাগ করো কেন বস, এই নাও ফ্রেশ মেইল!",
-                "এবারে কাজ হবে তো? এই নাও ইমেইল!"
-            ]
-            selected_email_line = random.choice(funny_email_quotes)
-            
-            bot.edit_message_text(f"✅ <b>Your Temp Email:</b>\n\n<code>{email}</code>\n\n💬 <i>{selected_email_line}</i>", user_id, msg.message_id, parse_mode="HTML")
-            
-            threading.Thread(target=auto_check_otp, args=(user_id, token), daemon=True).start()
-        else:
-            bot.edit_message_text("⚠️ Server busy, try again.", user_id, msg.message_id)
-    except Exception as e:
+    if success:
+        active_mails[user_id] = {'email': email, 'token': token, 'last_msg_id': None, 'last_checked_msg_id': None}
+        
+        funny_email_quotes = [
+            "কি রাগ করলা? নাও টাটকা ইমেইল নাও!",
+            "হা হা, এই নাও তোমার কাঙ্ক্ষিত ইমেইল!",
+            "রাগ করো কেন বস, এই নাও ফ্রেশ মেইল!",
+            "এবারে কাজ হবে তো? এই নাও ইমেইল!"
+        ]
+        selected_email_line = random.choice(funny_email_quotes)
+        
+        bot.edit_message_text(f"✅ <b>Your Temp Email:</b>\n\n<code>{email}</code>\n\n💬 <i>{selected_email_line}</i>", user_id, msg.message_id, parse_mode="HTML")
+        
+        threading.Thread(target=auto_check_otp, args=(user_id, token), daemon=True).start()
+    else:
         bot.edit_message_text("⚠️ Server busy, try again.", user_id, msg.message_id)
 
 def auto_check_otp(user_id, token):
@@ -265,6 +272,7 @@ def auto_check_otp(user_id, token):
                 messages = res.json().get('hydra:member', [])
                 if messages:
                     msg_id = messages[0]['id']
+                    # ডুপ্লিকেট কোড রোধ করতে আগের মেসেজ আইডি চেক করা হচ্ছে
                     if active_mails.get(user_id, {}).get('last_msg_id') != msg_id:
                         active_mails[user_id]['last_msg_id'] = msg_id
                         msg_detail = session.get(f"{BASE_URL}/messages/{msg_id}", headers=headers, timeout=5).json()
@@ -288,7 +296,6 @@ def auto_check_otp(user_id, token):
                             except:
                                 pass
 
-                        # ডাইরেক্ট ওয়ান-টাচ কপি কোড বক্স (এর ওপর টাচ করলেই সরাসরি ক্লিপবোর্ডে কপি হয়ে যাবে)
                         bot.send_message(
                             user_id, 
                             f"📩 <b>OTP Code Received!</b>\n\n<code>{otp_code}</code>\n\n💬 <i>{selected_funny_line}</i>\n\n🎁 You earned <b>$100</b>!", 
@@ -320,6 +327,7 @@ def check_otp(message):
             messages = res.json().get('hydra:member', [])
             if messages:
                 msg_id = messages[0]['id']
+                # একই কোড পুনরায় বারবার সেন্ড হওয়া রোধ করতে চেক করা হচ্ছে
                 if mail_info.get('last_checked_msg_id') != msg_id:
                     active_mails[user_id]['last_checked_msg_id'] = msg_id
                     users[user_id]['balance'] += 100.0
@@ -395,7 +403,7 @@ def withdraw(message):
             f"⚠️ তোমার ব্যালেন্স আছে মাত্র <b>${user_data['balance']:.2f}</b>! ফকিরি হালাত থেকে বাঁচতে আগে ৫০০০ ডলার বানাও, তারপর টাকা তোলার স্বপ্ন দেখো!",
             f"💸 পকেটে আছে মোটে <b>${user_data['balance']:.2f}</b>, আর তুলতে চাও ৫০০০! এত বড়লোক হওয়ার শখ কেন বস? আগে ইনভাইট করো!",
             f"🚫 একাউন্টে ব্যালেন্স কই যে উইথড্র করবা? বর্তমান ব্যালেন্স: <b>${user_data['balance']:.2f}</b>। যাও, আগে কামাই করে এসো!",
-            f"😅 এই গরিব অবস্থায় উইথড্র দিতে গেলে ব্যাংকও মাইর দিবো! ব্যালেন্স অন্তত <b>$5000</b> করো, আছে মাত্র <b>${user_data['balance']:.2f}</b>।"
+            f"😅 এই গরিব অবস্থায় উইথড্র দিতে গেলে ব্যাংকও মাইর দিবো! ব্যালেন্স অন্তত <b>$5000</b> করো, আছে মাত্র <b>${user_data['balance']:.2f}</b>。"
         ]
         bot.send_message(user_id, random.choice(funny_low_balance_quotes), parse_mode="HTML")
     else:
