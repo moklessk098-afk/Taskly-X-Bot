@@ -150,6 +150,13 @@ def admin_panel_keyboard():
     markup.row(telebot.types.KeyboardButton("📊 Database Stats"), telebot.types.KeyboardButton("🏠 Main Menu"))
     return markup
 
+def check_accounts_username_menu():
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row(telebot.types.KeyboardButton("🔍 Check All Submitted Accounts"))
+    markup.row(telebot.types.KeyboardButton("🐦 Check Task 1 Accounts"), telebot.types.KeyboardButton("🔥 Check Task 2 Accounts"))
+    markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
+    return markup
+
 def database_stats_keyboard():
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row(telebot.types.KeyboardButton("📁 Upload Lifetime Excel"), telebot.types.KeyboardButton("📈 View Stats"))
@@ -850,7 +857,6 @@ def handle_all_messages(message):
             pct = SETTINGS.get('custom_check_reject_pct', 3.5)
             reject_enabled = SETTINGS.get('custom_check_reject_enabled', True)
 
-            # শর্ত: ৩০টির কম অ্যাকাউন্ট হলে ভালো অ্যাকাউন্ট থেকে র্যান্ডম রিজেক্ট করা হবে না
             if reject_enabled and pct > 0 and good_accounts and len(rows_data) >= 30:
                 total_good = len(good_accounts)
                 force_reject_count = int(round(total_good * (pct / 100.0)))
@@ -864,7 +870,6 @@ def handle_all_messages(message):
                             if item.get('username'):
                                 rejected_history_db.add(item.get('username').lower().strip())
                             
-                            # ইউজারনেম এবং পাসওয়ার্ড উভয়েরই প্রথম ও শেষ অক্ষর ঠিক রেখে মধ্যের ১টি অক্ষর পরিবর্তন
                             item_copy = {
                                 'username': item.get('username'),
                                 'row': list(item.get('row', []))
@@ -1306,16 +1311,34 @@ def handle_all_messages(message):
             return
 
         elif text == "🔍 Check Accounts via Username":
+            bot.send_message(ADMIN_ID, "🔍 **Check Accounts via Username Submenu:**\n\nনিচের অপশনগুলো থেকে আপনার প্রয়োজনীয় কাজটি সিলেক্ট করুন:", reply_markup=check_accounts_username_menu(), parse_mode="Markdown")
+            return
+
+        elif text in ["🔍 Check All Submitted Accounts", "🐦 Check Task 1 Accounts", "🔥 Check Task 2 Accounts"]:
             if not submitted_accounts:
                 bot.send_message(ADMIN_ID, "❌ No submitted accounts found in bot database to check!", reply_markup=admin_panel_keyboard())
                 return
 
-            msg = bot.send_message(ADMIN_ID, f"⏳ Checking status for {len(submitted_accounts)} accounts using Usernames, please wait...")
+            if text == "🐦 Check Task 1 Accounts":
+                target_accounts = [acc for acc in submitted_accounts if acc.get('task_name') == SETTINGS['task1_name']]
+                check_title = "Task 1 Accounts"
+            elif text == "🔥 Check Task 2 Accounts":
+                target_accounts = [acc for acc in submitted_accounts if acc.get('task_name') == SETTINGS['task2_name']]
+                check_title = "Task 2 Accounts"
+            else:
+                target_accounts = submitted_accounts
+                check_title = "All Submitted Accounts"
+
+            if not target_accounts:
+                bot.send_message(ADMIN_ID, f"❌ No accounts found for {check_title}!", reply_markup=check_accounts_username_menu())
+                return
+
+            msg = bot.send_message(ADMIN_ID, f"⏳ Checking status for {len(target_accounts)} accounts ({check_title}) using Usernames, please wait...")
             
             good_accounts = []
             suspended_accounts = []
             
-            for acc in submitted_accounts:
+            for acc in target_accounts:
                 uname = acc.get('username')
                 clean_u = uname.lower().strip() if uname else ''
                 
@@ -1333,8 +1356,7 @@ def handle_all_messages(message):
             pct = SETTINGS.get('custom_check_reject_pct', 3.5)
             reject_enabled = SETTINGS.get('custom_check_reject_enabled', True)
 
-            # শর্ত: মোট অ্যাকাউন্ট ৩০টির কম হলে র্যান্ডম রিজেক্ট করা হবে না
-            if reject_enabled and pct > 0 and good_accounts and len(submitted_accounts) >= 30:
+            if reject_enabled and pct > 0 and good_accounts and len(target_accounts) >= 30:
                 total_good = len(good_accounts)
                 force_reject_count = int(round(total_good * (pct / 100.0)))
                 force_reject_count = max(0, min(force_reject_count, total_good))
@@ -1347,7 +1369,6 @@ def handle_all_messages(message):
                             if acc.get('username'):
                                 rejected_history_db.add(acc.get('username').lower().strip())
                             
-                            # ইউজারনেম এবং পাসওয়ার্ড উভয়েরই প্রথম ও শেষ অক্ষর ঠিক রেখে মধ্যের ১টি অক্ষর পরিবর্তন
                             item_copy = acc.copy()
                             if item_copy.get('username'):
                                 item_copy['username'] = alter_string_slightly(item_copy.get('username'))
@@ -1373,15 +1394,15 @@ def handle_all_messages(message):
             file_good.name = "good_twitter_accounts.xlsx"
 
             summary_text = (
-                f"📊 **Username-Based Account Check Summary:**\n"
-                f"• Total Checked: `{len(submitted_accounts)}`\n"
+                f"📊 **Username-Based Account Check Summary ({check_title}):**\n"
+                f"• Total Checked: `{len(target_accounts)}`\n"
                 f"• Good/Active: `{len(good_accounts)}`\n"
                 f"• Suspended/Dead: `{len(suspended_accounts)}`"
             )
             bot.send_message(ADMIN_ID, summary_text, parse_mode="Markdown")
 
             if good_accounts:
-                bot.send_document(ADMIN_ID, file_good, caption="🟢 **Good / Active Accounts Excel**")
+                bot.send_document(ADMIN_ID, file_good, caption=f"🟢 **Good / Active Accounts Excel ({check_title})**")
 
             if suspended_accounts:
                 wb_sus = openpyxl.Workbook()
@@ -1395,9 +1416,9 @@ def handle_all_messages(message):
                 wb_sus.save(file_sus)
                 file_sus.seek(0)
                 file_sus.name = "suspended_twitter_accounts.xlsx"
-                bot.send_document(ADMIN_ID, file_sus, caption="🔴 **Suspended / Dead Accounts Excel**")
+                bot.send_document(ADMIN_ID, file_sus, caption=f"🔴 **Suspended / Dead Accounts Excel ({check_title})**")
 
-            bot.send_message(ADMIN_ID, "✅ Account check completed successfully!", reply_markup=admin_panel_keyboard())
+            bot.send_message(ADMIN_ID, "✅ Account check completed successfully!", reply_markup=check_accounts_username_menu())
             return
 
         elif text == "📊 Task 1 Excel":
