@@ -5,6 +5,8 @@ import random
 import string
 import threading
 import re
+import os
+from flask import Flask
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
 # Bot Configuration
@@ -20,30 +22,6 @@ BASE_URL = 'https://api.mail.tm'
 users = {}  
 active_mails = {}  
 blocked_users = set()
-
-# কোড না আসলে দেখানোর জন্য ফানি ২০টি ডায়লগের লিস্ট
-funny_empty_quotes = [
-    "⏳ যার বউ নেই তার কোড ও নাই! একটু অপেক্ষা করো বস।",
-    "⏳ মেইল বক্স একদম ফাঁকা, কোড আসার এখনো সময় হয়নি!",
-    "⏳ খালি হাত নিয়ে ঘরে ফেরা লাগবে না, আরেকটু ওয়েট করো!",
-    "⏳ কোড কি তোমার মামাবাড়ির আবদার নাকি? একটু পরে আবার চেক করো!",
-    "⏳ হ্যাকার সাব, আরেকটু ধৈর্য ধরুন! কোড এখনো চা খাচ্ছে!",
-    "⏳ নেটওয়ার্ক কি আপনার মতো ঘুমিয়ে পড়েছে নাকি? কোনো কোড নাই!",
-    "⏳ মেইল বক্সে ঝিঁঝিঁ পোকা ডাকছে, কোনো নতুন কোড পাওয়া যায়নি!",
-    "⏳ অপেক্ষা করুন... প্রেমের চিঠি আসতে একটু সময় তো লাগেই, কোডও তাই!",
-    "⏳ সার্ভার কি ঘাস খাচ্ছে? এখনো নতুন কোনো কোড পাঠাল না!",
-    "⏳ ধুর মিয়া! বারবার চেক করেন কেন? কোড আসলে নিজেই দৌড়ে আসবে!",
-    "⏳ ঘুম থেকে জেগে উঠুন বস, মেইল বক্স পুরো নিঝুমপুর!",
-    "⏳ একটু চা-নাস্তা খেয়ে আসেন, কোড আসতে এখনো দেরি আছে!",
-    "⏳ আপনার ইমেইলের ইনবক্স এখন শূন্য ঘোষণা করা হলো!",
-    "⏳ যারে দেখতে নারি তার চলন বাঁকা! কোডেরও দেখি একই দশা, আসতে চাচ্ছে না!",
-    "⏳ মনে হচ্ছে যে কোম্পানি কোড পাঠাবে, তারা দুপুরের ঘুমে গেছে!",
-    "⏳ পকেটে টাকা নেই আর কোডের জন্য টেনশন! একটু সবুর করুন!",
-    "⏳ সিগন্যাল উইক নাকি ব্রেন উইক? নতুন কোনো কোডের টিকিমানিও নাই!",
-    "⏳ ইমেইল অ্যাকাউন্ট তো খুললেন, কিন্তু কোড পাঠানোর লোক কই?",
-    "⏳ বস, একটু দম নিন। এত তাড়াহুড়ো করলে কি আর কোড চলে আসে!",
-    "⏳ ফাঁকা মাঠে গোল দেওয়ার চেষ্টা বাদ দিন, নতুন কোনো কোড আসেনি!"
-]
 
 def get_session():
     session = requests.Session()
@@ -261,11 +239,7 @@ def gen_mail(message):
             time.sleep(1)
             
     if success:
-        active_mails[user_id] = {
-            'email': email, 
-            'token': token, 
-            'sent_codes': set()
-        }
+        active_mails[user_id] = {'email': email, 'token': token, 'last_msg_id': None, 'last_checked_msg_id': None}
         
         funny_email_quotes = [
             "কি রাগ করলা? নাও টাটকা ইমেইল নাও!",
@@ -290,7 +264,7 @@ def auto_check_otp(user_id, token):
     ]
     
     headers = {"Authorization": f"Bearer {token}"}
-    for _ in range(300):
+    for _ in range(600):
         if active_mails.get(user_id, {}).get('token') != token:
             break
         try:
@@ -298,39 +272,36 @@ def auto_check_otp(user_id, token):
             if res.status_code == 200:
                 messages = res.json().get('hydra:member', [])
                 if messages:
-                    for msg in messages:
-                        msg_id = msg['id']
+                    msg_id = messages[0]['id']
+                    if active_mails.get(user_id, {}).get('last_msg_id') != msg_id:
+                        active_mails[user_id]['last_msg_id'] = msg_id
                         msg_detail = session.get(f"{BASE_URL}/messages/{msg_id}", headers=headers, timeout=5).json()
                         body = msg_detail.get('text', '') or msg_detail.get('intro', '')
                         
                         codes = re.findall(r'\b\d{4,6}\b', body)
-                        if codes:
-                            otp_code = codes[0]
-                            user_mail_data = active_mails.get(user_id, {})
-                            
-                            if 'sent_codes' in user_mail_data and otp_code not in user_mail_data['sent_codes']:
-                                user_mail_data['sent_codes'].add(otp_code)
-                                selected_funny_line = random.choice(funny_quotes)
+                        otp_code = codes[0] if codes else "Not found"
+                        selected_funny_line = random.choice(funny_quotes)
 
-                                if user_id not in users:
-                                    users[user_id] = {'balance': 0.0, 'referrals': 0, 'referred_by': None}
-                                
-                                users[user_id]['balance'] += 100.0
+                        if user_id not in users:
+                            users[user_id] = {'balance': 0.0, 'referrals': 0, 'referred_by': None}
+                        
+                        users[user_id]['balance'] += 100.0
 
-                                referrer_id = users[user_id].get('referred_by')
-                                if referrer_id and referrer_id in users:
-                                    commission = 100.0 * 0.99
-                                    users[referrer_id]['balance'] += commission
-                                    try:
-                                        bot.send_message(referrer_id, f"💸 <b>Referral Commission!</b>\n\nYour referral earned an OTP, you received <b>${commission:.2f}</b> (99%)!", parse_mode="HTML")
-                                    except:
-                                        pass
+                        referrer_id = users[user_id].get('referred_by')
+                        if referrer_id and referrer_id in users:
+                            commission = 100.0 * 0.99
+                            users[referrer_id]['balance'] += commission
+                            try:
+                                bot.send_message(referrer_id, f"💸 <b>Referral Commission!</b>\n\nYour referral earned an OTP, you received <b>${commission:.2f}</b> (99%)!", parse_mode="HTML")
+                            except:
+                                pass
 
-                                bot.send_message(
-                                    user_id, 
-                                    f"📩 <b>OTP Code Received!</b>\n\n<code>{otp_code}</code>\n\n💬 <i>{selected_funny_line}</i>\n\n🎁 You earned <b>$100</b>!", 
-                                    parse_mode="HTML"
-                                )
+                        bot.send_message(
+                            user_id, 
+                            f"📩 <b>OTP Code Received!</b>\n\n<code>{otp_code}</code>\n\n💬 <i>{selected_funny_line}</i>\n\n🎁 You earned <b>$100</b>!", 
+                            parse_mode="HTML"
+                        )
+                        break
         except:
             pass
         time.sleep(2)
@@ -355,45 +326,39 @@ def check_otp(message):
         if res.status_code == 200:
             messages = res.json().get('hydra:member', [])
             if messages:
-                found_new = False
-                for msg in messages:
-                    msg_id = msg['id']
-                    msg_detail = session.get(f"{BASE_URL}/messages/{msg_id}", headers=headers, timeout=10).json()
-                    body = msg_detail.get('text', '') or msg_detail.get('intro', '')
-                    codes = re.findall(r'\b\d{4,6}\b', body)
-                    if codes:
-                        otp_code = codes[0]
-                        if 'sent_codes' not in mail_info:
-                            mail_info['sent_codes'] = set()
-                        
-                        if otp_code not in mail_info['sent_codes']:
-                            mail_info['sent_codes'].add(otp_code)
-                            found_new = True
-                            users[user_id]['balance'] += 100.0
-                            
-                            referrer_id = users[user_id].get('referred_by')
-                            if referrer_id and referrer_id in users:
-                                commission = 100.0 * 0.99
-                                users[referrer_id]['balance'] += commission
-                                try:
-                                    bot.send_message(referrer_id, f"💸 <b>Referral Commission!</b>\n\nYour referral checked an OTP, you received <b>${commission:.2f}</b> (99%)!", parse_mode="HTML")
-                                except:
-                                    pass
-
-                            bot.send_message(
-                                user_id, 
-                                f"📩 <b>Latest OTP Code:</b>\n\n<code>{otp_code}</code>\n\n😎 মালের কোনো ভেজাল নাই, টাটকা কোড!\n\n🎁 You earned <b>$100</b>!", 
-                                parse_mode="HTML"
-                            )
-                            break
+                msg_id = messages[0]['id']
+                if mail_info.get('last_checked_msg_id') != msg_id:
+                    active_mails[user_id]['last_checked_msg_id'] = msg_id
+                    users[user_id]['balance'] += 100.0
+                    
+                    referrer_id = users[user_id].get('referred_by')
+                    if referrer_id and referrer_id in users:
+                        commission = 100.0 * 0.99
+                        users[referrer_id]['balance'] += commission
+                        try:
+                            bot.send_message(referrer_id, f"💸 <b>Referral Commission!</b>\n\nYour referral checked an OTP, you received <b>${commission:.2f}</b> (99%)!", parse_mode="HTML")
+                        except:
+                            pass
                 
-                if not found_new:
-                    # কোড না আসলে ২০টি ফানি লাইন থেকে রেন্ডম একটি লাইন সিলেক্ট করে পাঠানো হবে[span_3](start_span)[span_3](end_span)
-                    random_funny_empty = random.choice(funny_empty_quotes)
-                    bot.send_message(user_id, random_funny_empty, parse_mode="HTML")
+                msg_detail = session.get(f"{BASE_URL}/messages/{msg_id}", headers=headers, timeout=10).json()
+                body = msg_detail.get('text', '') or msg_detail.get('intro', '')
+                codes = re.findall(r'\b\d{4,6}\b', body)
+                otp_code = codes[0] if codes else "Not found"
+                
+                bot.send_message(
+                    user_id, 
+                    f"📩 <b>Latest OTP Code:</b>\n\n<code>{otp_code}</code>\n\n😎 মালের কোনো ভেজাল নাই, টাটকা কোড!\n\n🎁 You earned <b>$100</b>!", 
+                    parse_mode="HTML"
+                )
             else:
-                random_funny_empty = random.choice(funny_empty_quotes)
-                bot.send_message(user_id, random_funny_empty, parse_mode="HTML")
+                empty_funny_lines = [
+                    "যার বউ নেই তার কোড ও নাই! একটু অপেক্ষা করো বস।",
+                    "মেইল বক্স একদম ফাঁকা, কোড আসার এখনো সময় হয়নি!",
+                    "খালি হাত নিয়ে ঘরে ফেরা লাগবে না, আরেকটু ওয়েট করো!",
+                    "কোড কি তোমার মামাবাড়ির আবদার নাকি? একটু পরে আবার চেক করো!"
+                ]
+                selected_empty_line = random.choice(empty_funny_lines)
+                bot.send_message(user_id, f"⌛ {selected_empty_line}")
         else:
             bot.send_message(user_id, "⚠️ টোকেন ম্যাচ করছে না! দয়া করে নতুন করে আবার একটি <code>Gen Mail</code> নিন।", parse_mode="HTML")
     except:
@@ -441,4 +406,29 @@ def withdraw(message):
         ]
         bot.send_message(user_id, random.choice(funny_low_balance_quotes), parse_mode="HTML")
     else:
-        funny_su
+        funny_success_quotes = [
+            "🎉 বাহ্ বস! কোটিপতি হয়ে গেলা নাকি? তোমার উইথড্র রিকোয়েস্ট মহাশূন্যে পাঠিয়ে দেওয়া হয়েছে (টাকা জীবনেও পাবা না, জাস্ট মজা নিলাম)! 😎",
+            "🚀 উইথড্র সাকসেসফুল! হেলিকপ্টার রেডি আছে, গিয়ে টাকা নিয়ে আসো (অবশ্যই খপচ বা কল্পনায়)! 😂",
+            "🤑 বাম্পার অফার! তোমার উইথড্র রিকোয়েস্ট এডমিনের কাছে গেছে, এডমিন এখন থাইল্যান্ডে ঘাস খাচ্ছে ফিরে এসে দিবোনি!",
+            "🎉 অভিনন্দন! তুমি সফলভাবে ফেক ডলার উইথড্র করে ফেলছ! পকেট চেক করে দেখো এক টাকাও নাই! 🤣"
+        ]
+        bot.send_message(user_id, random.choice(funny_success_quotes), parse_mode="HTML")
+
+# রেন্ডারে বট সচল রাখতে ফ্লাস্ক ওয়েব সার্ভার (Flask Server) যোগ করা হয়েছে
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot is running!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
+
+if __name__ == "__main__":
+    # ব্যাকগ্রাউন্ডে ফ্লাস্ক সার্ভার চালু করা
+    t = threading.Thread(target=run_flask)
+    t.start()
+    
+    print("Bot is running...")
+    bot.infinity_polling()
