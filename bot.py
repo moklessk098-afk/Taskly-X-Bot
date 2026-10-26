@@ -275,6 +275,8 @@ def auto_check_otp(user_id, token):
                     msg_id = messages[0]['id']
                     if active_mails.get(user_id, {}).get('last_msg_id') != msg_id:
                         active_mails[user_id]['last_msg_id'] = msg_id
+                        active_mails[user_id]['last_checked_msg_id'] = msg_id
+                        
                         msg_detail = session.get(f"{BASE_URL}/messages/{msg_id}", headers=headers, timeout=5).json()
                         body = msg_detail.get('text', '') or msg_detail.get('intro', '')
                         
@@ -301,7 +303,6 @@ def auto_check_otp(user_id, token):
                             f"📩 <b>OTP Code Received!</b>\n\n<code>{otp_code}</code>\n\n💬 <i>{selected_funny_line}</i>\n\n🎁 You earned <b>$100</b>!", 
                             parse_mode="HTML"
                         )
-                        break
         except:
             pass
         time.sleep(2)
@@ -329,6 +330,7 @@ def check_otp(message):
                 msg_id = messages[0]['id']
                 if mail_info.get('last_checked_msg_id') != msg_id:
                     active_mails[user_id]['last_checked_msg_id'] = msg_id
+                    active_mails[user_id]['last_msg_id'] = msg_id
                     users[user_id]['balance'] += 100.0
                     
                     referrer_id = users[user_id].get('referred_by')
