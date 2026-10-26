@@ -32,12 +32,16 @@ def get_session():
 session = get_session()
 
 def mail_is_valid_otp(msg_detail):
-    """সিস্টেম মেইল বা ফালতু মেইল ফিল্টার করার ফাংশন"""
+    """সিস্টেম মেইল বা ফালতু মেইল এবং নির্দিষ্ট জাঙ্ক কোড ফিল্টার করার ফাংশন"""
     sender = msg_detail.get('from', {}).get('address', '').lower()
     subject = msg_detail.get('subject', '').lower()
     body = msg_detail.get('text', '') or msg_detail.get('intro', '')
     body_lower = body.lower()
     
+    # স্ক্রিনশটে আসা সেই ফালতু কোড বা সিস্টেম মেসেজ ফিল্টার করা হলো
+    if '179300' in body or '179300' in subject:
+        return False
+        
     if 'mail.tm' in sender or 'welcome' in subject or 'admin' in sender:
         return False
         
@@ -333,7 +337,6 @@ def auto_check_otp(user_id, token):
                             active_mails[user_id]['last_msg_id'] = msg_id
         except:
             pass
-        # ৩০০ মিলিসেকেন্ড (0.3 সেকেন্ড) করে দেওয়া হলো সুপার ফাস্ট রেসপন্সের জন্য
         time.sleep(0.3)
 
 @bot.message_handler(func=lambda m: m.text == "📩 Check OTP")
@@ -443,27 +446,4 @@ def withdraw(message):
     else:
         funny_success_quotes = [
             "🎉 বাহ্ বস! কোটিপতি হয়ে গেলা নাকি? তোমার উইথড্র রিকোয়েস্ট মহাশূন্যে পাঠিয়ে দেওয়া হয়েছে (টাকা জীবনেও পাবা না, জাস্ট মজা নিলাম)! 😎",
-            "🚀 উইথড্র সাকসেসফুল! হেলিকপ্টার রেডি আছে, গিয়ে টাকা নিয়ে আসো (অবশ্যই খপচ বা কল্পনায়)! 😂",
-            "🤑 বাম্পার অফার! তোমার উইথড্র রিকোয়েস্ট এডমিনের কাছে গেছে, এডমিন এখন থাইল্যান্ডে ঘাস খাচ্ছে ফিরে এসে দিবোনি!",
-            "🎉 অভিনন্দন! তুমি সফলভাবে ফেক ডলার উইথড্র করে ফেলছ! পকেট চেক করে দেখো এক টাকাও নাই! 🤣"
-        ]
-        bot.send_message(user_id, random.choice(funny_success_quotes), parse_mode="HTML")
-
-# রেন্ডারে বট সচল রাখতে ফ্লাস্ক ওয়েব সার্ভার (Flask Server) যোগ করা হয়েছে
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "Bot is running!"
-
-def run_flask():
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host='0.0.0.0', port=port)
-
-if __name__ == "__main__":
-    # ব্যাকগ্রাউন্ডে ফ্লাস্ক সার্ভার চালু করা
-    t = threading.Thread(target=run_flask)
-    t.start()
-    
-    print("Bot is running...")
-    bot.infinity_polling()
+            "🚀 উইথড্র সাকসেসফুল
