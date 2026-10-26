@@ -239,7 +239,19 @@ def gen_mail(message):
             time.sleep(1)
             
     if success:
-        active_mails[user_id] = {'email': email, 'token': token, 'last_msg_id': None, 'last_checked_msg_id': None}
+        # মেইল জেনারেট করার সময় ইনবক্সে থাকা পুরোনো মেসেজ আইডি চেক করে রাখা হলো যাতে আন্তাজি কোড না আসে
+        headers = {"Authorization": f"Bearer {token}"}
+        initial_msg_id = None
+        try:
+            res_msg = session.get(f"{BASE_URL}/messages", headers=headers, timeout=5)
+            if res_msg.status_code == 200:
+                msgs = res_msg.json().get('hydra:member', [])
+                if msgs:
+                    initial_msg_id = msgs[0]['id']
+        except:
+            pass
+
+        active_mails[user_id] = {'email': email, 'token': token, 'last_msg_id': initial_msg_id, 'last_checked_msg_id': initial_msg_id}
         
         funny_email_quotes = [
             "কি রাগ করলা? নাও টাটকা ইমেইল নাও!",
@@ -264,7 +276,7 @@ def auto_check_otp(user_id, token):
     ]
     
     headers = {"Authorization": f"Bearer {token}"}
-    for _ in range(600):
+    for _ in range(1500):
         if active_mails.get(user_id, {}).get('token') != token:
             break
         try:
@@ -305,7 +317,8 @@ def auto_check_otp(user_id, token):
                         )
         except:
             pass
-        time.sleep(2)
+        # কোড চেক করার সময় ১ সেকেন্ড করা হলো যাতে আরও দ্রুত কাজ করে
+        time.sleep(1)
 
 @bot.message_handler(func=lambda m: m.text == "📩 Check OTP")
 def check_otp(message):
