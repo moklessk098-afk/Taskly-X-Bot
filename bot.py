@@ -3,52 +3,110 @@ import requests
 import time
 import random
 import string
-import threading
 import re
+import datetime
+import pyotp
+import io
+import openpyxl
+import threading
 import os
+import math
+import hashlib
 from flask import Flask
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
-# Bot Configuration
-TOKEN = '8884874905:AAFtdp9FTiCnFKw0MN6mN0Q2Yd7Jw6FAJLY'
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot is active and running 24/7!"
+
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
+
+TOKEN = '8666711380:AAEtA7_2DYrnNVwoal1nZj3H4XVupUv4w8Y'
 CHANNEL_USERNAME = '@taandob7'
-ADMIN_ID = 8702921423  # আপনার এডমিন আইডি
-bot = telebot.TeleBot(TOKEN)
+ADMIN_ID = 8702921423
+BOT_USERNAME = 'TasklyX_BD_Bot'
 
-# Mail.tm API Base URL
-BASE_URL = 'https://api.mail.tm'
+bot = telebot.TeleBot(TOKEN, parse_mode=None)
 
-# In-memory Database
+SETTINGS = {
+    'task1_name': 'Twitter_2fa_auth_token',
+    'task2_name': 'Twitter_2FA_Only',
+    'reward_tw_token': 0.03,    
+    'reward_tw_2fa': 0.03,      
+    'usd_to_bdt': 125.0,        
+    'withdraw_fee_bdt': 5.0,    
+    'min_withdraw_bdt': 5.0,   
+    'withdraw_enabled': True,   
+    'bkash_enabled': True,
+    'nagad_enabled': True,
+    'binance_enabled': True,
+    'pwd_mode': 'random',       
+    'pwd_target_task': 'BOTH',  
+    'custom_pwd_value': 'TasklyABC', 
+    'pwd_length': 10,           
+    'auto_report_enabled': False, 
+    'auto_report_task': 'ALL',
+    'auto_report_interval': 30, 
+    'auto_approve_pct': 80.0,
+    'custom_check_reject_pct': 2.8,  
+    'custom_check_reject_enabled': True,
+    'extractor_colon_enabled': True,  
+    'admin_pin': '4875',        
+    'top_enabled': True,
+    'top_reset_mode': 'daily_10pm', 
+    'top_reset_interval_mins': 1440,
+    'top_reset_timestamp': time.time() + 86400,
+    'last_top_reset_date': '',
+    'top_rewards': {1: 1.00, 2: 0.50, 3: 0.30, 4: 0.20, 5: 0.10},
+    'ref_enabled': True,
+    'ref_commission_pct': 10.0,
+    'tw_2fa_enabled': True,
+    'tw_token_enabled': True,
+    'task_report_timer_text': 'Every 30 minutes'
+}
+
+videos_list = [
+    {
+        'title': 'Twitter Account Creation Guide',
+        'type': 'url',
+        'content': 'https://t.me/'
+    }
+]
+
+FIRST_NAMES = ['tracy', 'tanvir', 'sakib', 'rahim', 'karim', 'arif', 'hasan', 'mahmud', 'faysal', 'sohel', 'nayan', 'rakib', 'imran', 'fahim', 'joy', 'roni']
+
 users = {}  
 active_mails = {}  
+user_steps = {}       
+user_acc_data = {}   
+submitted_accounts = []  
+rejected_accounts_db = []
+rejected_history_db = set()
+used_emails_db = set()
+used_codes_db = set()
+withdraw_requests = []  
 blocked_users = set()
+lifetime_usernames = set() 
+downloaded_status = {'task1': False, 'task2': False}
 
-def get_session():
-    session = requests.Session()
-    adapter = requests.adapters.HTTPAdapter(max_retries=5)
-    session.mount('https://', adapter)
-    return session
-
-session = get_session()
-
-def mail_is_valid_otp(msg_detail):
-    """সিস্টেম মেইল বা ফালতু মেইল এবং নির্দিষ্ট জাঙ্ক কোড ফিল্টার করার ফাংশন"""
-    sender = msg_detail.get('from', {}).get('address', '').lower()
-    subject = msg_detail.get('subject', '').lower()
-    body = msg_detail.get('text', '') or msg_detail.get('intro', '')
-    body_lower = body.lower()
-    
-    # স্ক্রিনশটে আসা সেই ফালতু কোড বা সিস্টেম মেসেজ ফিল্টার করা হলো
-    if '179300' in body or '179300' in subject:
-        return False
-        
-    if 'mail.tm' in sender or 'welcome' in subject or 'admin' in sender:
-        return False
-        
-    otp_keywords = ['code', 'otp', 'verify', 'verification', 'pin', 'login', 'auth', 'confirmation']
-    has_keyword = any(keyword in body_lower or keyword in subject for keyword in otp_keywords)
-    
-    return True
+def get_user_data(user_id, name="User", username=None):
+    if user_id not in users:
+        users[user_id] = {
+            'name': name, 
+            'username': username,
+            'balance': 0.0, 
+            'total_earned': 0.0, 
+            'completed_tasks': 0,
+            'referral_count': 0,
+            'ref_earned': 0.0,
+            'referrals_list': []
+        }
+    elif username and not users[user_id].get('username'):
+        users[user_id]['username'] = username
+    return users[user_id]
 
 def is_subscribed(user_id):
     try:
@@ -57,393 +115,2464 @@ def is_subscribed(user_id):
     except Exception:
         return False
 
-# সাধারণ ইউজারের জন্য কিবোর্ড
 def main_keyboard(user_id):
-    markup = ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row(KeyboardButton("📧 Gen Mail"), KeyboardButton("📩 Check OTP"))
-    markup.row(KeyboardButton("💰 Balance"), KeyboardButton("👥 Referral"))
-    markup.row(KeyboardButton("💳 Withdraw"))
-    
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row(telebot.types.KeyboardButton("💰 Balance"), telebot.types.KeyboardButton("📋 Tasks"))
+    markup.row(telebot.types.KeyboardButton("📤 Withdraw"), telebot.types.KeyboardButton("👤 Profile"))
+    markup.row(telebot.types.KeyboardButton("🏆 Top Leaderboard"), telebot.types.KeyboardButton("👥 Referral"))
+    markup.row(telebot.types.KeyboardButton("🎬 Video Tutorial"))
     if user_id == ADMIN_ID:
-        markup.row(KeyboardButton("🛡️ Admin Panel"))
-        
+        markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
     return markup
 
-def check_join_keyboard():
-    markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}"))
-    markup.add(InlineKeyboardButton("✅ Verify Subscription", callback_data="check_subscription"))
+def tasks_keyboard():
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    r_token = SETTINGS['reward_tw_token']
+    r_2fa = SETTINGS['reward_tw_2fa']
+    t1_name = SETTINGS['task1_name']
+    t2_name = SETTINGS['task2_name']
+
+    if SETTINGS.get('tw_token_enabled', True):
+        markup.row(telebot.types.KeyboardButton(f"🐦 {t1_name} (${r_token:.4f})"))
+    if SETTINGS.get('tw_2fa_enabled', True):
+        markup.row(telebot.types.KeyboardButton(f"🔥 {t2_name} (${r_2fa:.4f})"))
+    markup.row(telebot.types.KeyboardButton("❌ Cancel"))
     return markup
+
+def admin_panel_keyboard():
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row(telebot.types.KeyboardButton("📤 Withdraw Requests"), telebot.types.KeyboardButton("🔍 Search UID/Username"))
+    markup.row(telebot.types.KeyboardButton("🔑 Extract Auth Token from Sheet"), telebot.types.KeyboardButton("⚡ Batch Approve / Percentage"))
+    markup.row(telebot.types.KeyboardButton("🛠️ Task Control"), telebot.types.KeyboardButton("💰 Change Price"))
+    markup.row(telebot.types.KeyboardButton("✏️ Change Task Names"), telebot.types.KeyboardButton("🔐 Password Management"))
+    markup.row(telebot.types.KeyboardButton("⚙️ Payment Methods"), telebot.types.KeyboardButton("👥 Referral Management"))
+    markup.row(telebot.types.KeyboardButton("👥 User Management"), telebot.types.KeyboardButton("📢 Broadcast Message"))
+    markup.row(telebot.types.KeyboardButton("🎬 Video Management"), telebot.types.KeyboardButton("📊 Task 1 Excel"))
+    markup.row(telebot.types.KeyboardButton("📊 Task 2 Excel (2FA)"), telebot.types.KeyboardButton("🔍 Check Accounts via Username"))
+    markup.row(telebot.types.KeyboardButton("📥 Custom Username Check"), telebot.types.KeyboardButton("📊 Database Stats"))
+    markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
+    return markup
+
+def search_pending_menu():
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row(telebot.types.KeyboardButton("🔍 Search UID / Username"), telebot.types.KeyboardButton("📊 Download Pending Accounts Excel"))
+    markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
+    return markup
+
+def check_accounts_username_menu():
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row(telebot.types.KeyboardButton("🔍 Check All Submitted Accounts"))
+    markup.row(telebot.types.KeyboardButton("🐦 Check Task 1 Accounts"), telebot.types.KeyboardButton("🔥 Check Task 2 Accounts"))
+    markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
+    return markup
+
+def database_stats_keyboard():
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row(telebot.types.KeyboardButton("📁 Upload Lifetime Excel"), telebot.types.KeyboardButton("📈 View Stats"))
+    markup.row(telebot.types.KeyboardButton("🔍 Filter New vs Old Excel"))
+    markup.row(telebot.types.KeyboardButton("🔍 Deduplicate File"))
+    markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
+    return markup
+
+def batch_panel_keyboard():
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    rej_st = "🟢 ON" if SETTINGS.get('custom_check_reject_enabled', True) else "🔴 OFF"
+    markup.row(telebot.types.KeyboardButton("✅ Batch Approve Usernames"), telebot.types.KeyboardButton("❌ Batch Reject Usernames"))
+    markup.row(telebot.types.KeyboardButton("📊 Percentage Auto Process"), telebot.types.KeyboardButton("📉 Percentage Reject Process"))
+    markup.row(telebot.types.KeyboardButton(f"🔄 Toggle Reject Sys: {rej_st}"))
+    markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
+    return markup
+
+def excel_task1_menu():
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row(telebot.types.KeyboardButton("📊 Download Excel: Task 1"), telebot.types.KeyboardButton("🗑️ Delete Task 1 Accounts"))
+    markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
+    return markup
+
+def excel_2fa_menu():
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row(telebot.types.KeyboardButton("📊 Download Excel: 2FA"), telebot.types.KeyboardButton("🗑️ Delete 2FA Accounts"))
+    markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
+    return markup
+
+def password_mgmt_keyboard():
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    mode = SETTINGS.get('pwd_mode', 'random')
+    m_rand = "✅ Random" if mode == 'random' else "Random"
+    m_rand_date = "✅ Random + Date" if mode == 'random_date' else "Random + Date"
+    m_same = "✅ Custom / Same" if mode == 'same' else "Custom / Same"
+
+    target = SETTINGS.get('pwd_target_task', 'BOTH')
+    t_text = f"Target Task: {target}"
+
+    markup.row(telebot.types.KeyboardButton(f"Mode: {m_rand}"), telebot.types.KeyboardButton(f"Mode: {m_rand_date}"))
+    markup.row(telebot.types.KeyboardButton(f"Mode: {m_same}"), telebot.types.KeyboardButton("✍️ Set Custom Password"))
+    markup.row(telebot.types.KeyboardButton(f"🔄 {t_text}"))
+    markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
+    return markup
+
+def referral_mgmt_keyboard():
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    ref_st = "🟢 ON" if SETTINGS.get('ref_enabled', True) else "🔴 OFF"
+    markup.row(telebot.types.KeyboardButton(f"Toggle Referral: {ref_st}"))
+    markup.row(telebot.types.KeyboardButton("💰 Set Referral Commission %"))
+    markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
+    return markup
+
+def top_control_keyboard():
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    st = "🟢 ON" if SETTINGS.get('top_enabled', True) else "🔴 OFF"
+    mode = SETTINGS.get('top_reset_mode')
+    if mode == 'daily_10pm':
+        mode_text = "Daily 10:00 PM"
+    elif mode == 'sunday_10pm':
+        mode_text = "Sunday 10:00 PM"
+    else:
+        mode_text = f"Every {SETTINGS.get('top_reset_interval_mins', 1440)} mins"
+
+    markup.row(telebot.types.KeyboardButton(f"Toggle Leaderboard: {st}"))
+    markup.row(telebot.types.KeyboardButton(f"Reset Schedule: {mode_text}"))
+    markup.row(telebot.types.KeyboardButton("⏱️ Set Reset Minutes"))
+    markup.row(telebot.types.KeyboardButton("🎁 Distribute Rewards & Reset Now"))
+    markup.row(telebot.types.KeyboardButton("💰 Edit Rank Rewards"))
+    markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
+    return markup
+
+def task_control_keyboard():
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    t1 = "🟢 ON" if SETTINGS.get('tw_token_enabled', True) else "🔴 OFF"
+    t2 = "🟢 ON" if SETTINGS.get('tw_2fa_enabled', True) else "🔴 OFF"
+    markup.row(telebot.types.KeyboardButton(f"Toggle Task 1: {t1}"), telebot.types.KeyboardButton(f"Toggle Task 2: {t2}"))
+    markup.row(telebot.types.KeyboardButton("⏱️ Set Report Timer Text"))
+    markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
+    return markup
+
+def payment_toggle_keyboard():
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    wd_st = "🟢 ON" if SETTINGS['withdraw_enabled'] else "🔴 OFF"
+    bk_st = "🟢 ON" if SETTINGS['bkash_enabled'] else "🔴 OFF"
+    ng_st = "🟢 ON" if SETTINGS['nagad_enabled'] else "🔴 OFF"
+    bn_st = "🟢 ON" if SETTINGS['binance_enabled'] else "🔴 OFF"
+
+    markup.row(telebot.types.KeyboardButton(f"Withdraw Sys: {wd_st}"), telebot.types.KeyboardButton(f"Bkash: {bk_st}"))
+    markup.row(telebot.types.KeyboardButton(f"Nagad: {ng_st}"), telebot.types.KeyboardButton(f"Binance: {bn_st}"))
+    markup.row(telebot.types.KeyboardButton("⚙️ Set Minimum Withdraw Limit"))
+    markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
+    return markup
+
+def video_mgmt_keyboard():
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row(telebot.types.KeyboardButton("➕ Add Video File / Link"), telebot.types.KeyboardButton("🗑️ Remove All Videos"))
+    markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
+    return markup
+
+def clear_user_chat_session(user_id, chat_messages_dict):
+    if user_id in chat_messages_dict:
+        for msg_id in chat_messages_dict[user_id]:
+            try:
+                bot.delete_message(user_id, msg_id)
+            except Exception:
+                pass
+        chat_messages_dict[user_id] = []
+
+def alter_string_slightly(text_str):
+    s = str(text_str).strip()
+    if not s or len(s) <= 2:
+        return s + "x"
+    
+    val_list = list(s)
+    middle_indices = list(range(1, len(val_list) - 1))
+    
+    letter_indices = [idx for idx in middle_indices if val_list[idx].isalpha()]
+    if not letter_indices:
+        letter_indices = middle_indices
+        
+    hash_val = int(hashlib.md5(s.encode('utf-8')).hexdigest(), 16)
+    idx = letter_indices[hash_val % len(letter_indices)]
+    
+    current_char = val_list[idx]
+    
+    similar_map = {
+        'I': 'l', 'l': 'I', 'i': 'l', 'L': 'I',
+        'F': 'P', 'P': 'F', 'f': 'p', 'p': 'f',
+        'O': 'o', 'o': 'O',
+        'S': 's', 's': 'S',
+        'C': 'c', 'c': 'C',
+        'V': 'v', 'v': 'V',
+        'W': 'w', 'w': 'W',
+        'X': 'x', 'x': 'X',
+        'Z': 'z', 'z': 'Z',
+        'B': 'R', 'R': 'B',
+    }
+    
+    if current_char in similar_map:
+        new_char = similar_map[current_char]
+    elif current_char.isalpha():
+        if current_char.isupper():
+            new_char = chr((ord(current_char) - 65 + 1) % 26 + 65)
+        else:
+            new_char = chr((ord(current_char) - 97 + 1) % 26 + 97)
+    else:
+        new_char = 'x'
+        
+    val_list[idx] = new_char
+    return "".join(val_list)
+
+def generate_unique_human_username():
+    f_name = random.choice(FIRST_NAMES)
+    random_digits = ''.join(random.choices(string.digits, k=2))
+    random_chars = ''.join(random.choices(string.ascii_lowercase, k=2))
+    return f"{f_name}{random_digits}{random_chars}"
+
+def generate_password(task_name=None):
+    target = SETTINGS.get('pwd_target_task', 'BOTH')
+    if target != 'BOTH' and task_name:
+        if target == 'task1' and task_name != SETTINGS['task1_name']:
+            return ''.join(random.choices(string.ascii_letters + string.digits, k=10))
+        if target == 'task2' and task_name != SETTINGS['task2_name']:
+            return ''.join(random.choices(string.ascii_letters + string.digits, k=10))
+
+    length = SETTINGS.get('pwd_length', 10)
+    mode = SETTINGS.get('pwd_mode', 'random')
+    chars = string.ascii_letters + string.digits
+    
+    if mode == 'same':
+        return SETTINGS.get('custom_pwd_value', 'TasklyABC')
+    elif mode == 'random_date':
+        letters_part = ''.join(random.choices(string.ascii_letters, k=max(4, length - 2)))
+        date_part = datetime.datetime.now().strftime("%d")
+        return f"{letters_part}{date_part}"
+    else: 
+        return ''.join(random.choices(chars, k=length))
+
+def get_mailtm_domain():
+    try:
+        res = requests.get("https://api.mail.tm/domains", timeout=5)
+        if res.status_code == 200:
+            domains = res.json().get('hydra:member', [])
+            if domains:
+                return domains[0]['domain']
+    except Exception:
+        pass
+    return "gmail.com"
+
+def create_mailtm_account(task_name=None):
+    for _ in range(5):
+        domain = get_mailtm_domain()
+        username = generate_unique_human_username()
+        email = f"{username}@{domain}"
+        if email.lower() not in used_emails_db:
+            password = generate_password(task_name)
+            try:
+                payload = {"address": email, "password": password}
+                res = requests.post("https://api.mail.tm/accounts", json=payload, timeout=7)
+                if res.status_code in [200, 201]:
+                    token_res = requests.post("https://api.mail.tm/token", json=payload, timeout=7)
+                    if token_res.status_code == 200:
+                        token = token_res.json().get('token')
+                        used_emails_db.add(email.lower())
+                        return {'email': email, 'username': username, 'token': token, 'type': 'mailtm', 'password': password}
+            except Exception:
+                pass
+    return None
+
+def fetch_twitter_code(token):
+    if token == 'dummy_token':
+        return str(random.randint(100000, 999999))
+    for _ in range(5):
+        try:
+            headers = {"Authorization": f"Bearer {token}"}
+            res = requests.get("https://api.mail.tm/messages", headers=headers, timeout=7)
+            if res.status_code == 200:
+                messages = res.json().get('hydra:member', [])
+                for msg in messages:
+                    sender = str(msg.get('from', {}).get('address', '')).lower()
+                    subject = str(msg.get('subject', '')).lower()
+                    
+                    if 'twitter' in sender or 'x.com' in sender or 'twitter' in subject or 'verification' in subject or 'confirm' in subject:
+                        msg_id = msg.get('id')
+                        msg_res = requests.get(f"https://api.mail.tm/messages/{msg_id}", headers=headers, timeout=7)
+                        if msg_res.status_code == 200:
+                            data = msg_res.json()
+                            text_content = str(data.get('text', '')) + " " + str(data.get('subject', '')) + " " + str(data.get('intro', ''))
+                            codes = re.findall(r'\b\d{6}\b', text_content)
+                            if codes:
+                                code = codes[0]
+                                if code not in used_codes_db:
+                                    used_codes_db.add(code)
+                                    return code
+        except Exception:
+            pass
+        time.sleep(3)
+    return None
+
+def extract_username(text):
+    text = text.strip()
+    match = re.search(r'(?:https?://(?:www\.)?(?:twitter|x)\.com/)?@?([a-zA-Z0-9_]{1,15})', text)
+    if match:
+        uname = match.group(1)
+        if len(uname) >= 3 and not uname.lower() in ['http', 'https', 'com', 'twitter', 'x']:
+            return uname
+    
+    parts = re.split(r'[:|,\s\t]+', text)
+    for part in parts:
+        part_clean = part.replace('@', '').strip()
+        if 3 <= len(part_clean) <= 15 and re.match(r'^[a-zA-Z0-9_]+$', part_clean):
+            if not part_clean.isdigit():
+                return part_clean
+    return None
+
+def extract_auth_token(text):
+    text = text.strip()
+    match = re.search(r'auth_token=([a-zA-Z0-9_-]+)', text)
+    if match:
+        return match.group(1)
+    
+    clean_text = text.replace('"', '').replace("'", "").split(';')[0].strip()
+    if len(clean_text) >= 20:
+        return clean_text
+    return text
+
+def check_status_by_username(username):
+    if not username or username == 'N/A':
+        return 'suspended'
+    
+    clean_username = username.replace('@', '').strip()
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9'
+    }
+    
+    try:
+        url = f"https://x.com/{clean_username}"
+        res = requests.get(url, headers=headers, timeout=6)
+        if res.status_code == 200:
+            html = res.text.lower()
+            if "account suspended" in html or "this account doesn’t exist" in html or "user not found" in html:
+                return 'suspended'
+            return 'active'
+        elif res.status_code == 404:
+            return 'suspended'
+    except Exception:
+        pass
+
+    return 'active'
+
+def process_file_or_text_usernames(message):
+    usernames_found = []
+    if message.content_type == 'document':
+        try:
+            file_info = bot.get_file(message.document.file_id)
+            downloaded_file = bot.download_file(file_info.file_path)
+            file_name = message.document.file_name.lower()
+            
+            if file_name.endswith('.xlsx'):
+                wb = openpyxl.load_workbook(io.BytesIO(downloaded_file))
+                sheet = wb.active
+                for row in sheet.iter_rows(values_only=True):
+                    if not any(row):
+                        continue
+                    row_list = [str(c) if c is not None else "" for c in row]
+                    if row_list and row_list[0]:
+                        u = extract_username(row_list[0])
+                        if u:
+                            usernames_found.append(u)
+            else:
+                content = downloaded_file.decode('utf-8', errors='ignore')
+                for line in content.splitlines():
+                    u = extract_username(line)
+                    if u:
+                        usernames_found.append(u)
+        except Exception:
+            pass
+    elif message.content_type == 'text':
+        for line in message.text.splitlines():
+            u = extract_username(line)
+            if u:
+                usernames_found.append(u)
+                
+    seen = set()
+    return [x for x in usernames_found if not (x in seen or seen.add(x))]
+
+def parse_full_accounts_file(message):
+    rows_data = []
+    if message.content_type == 'document':
+        try:
+            file_info = bot.get_file(message.document.file_id)
+            downloaded_file = bot.download_file(file_info.file_path)
+            file_name = message.document.file_name.lower()
+            
+            if file_name.endswith('.xlsx'):
+                wb = openpyxl.load_workbook(io.BytesIO(downloaded_file))
+                sheet = wb.active
+                for row in sheet.iter_rows(values_only=True):
+                    if not any(row):
+                        continue
+                    row_list = [str(c) if c is not None else "" for c in row]
+                    uname = extract_username(row_list[0]) if row_list and row_list[0] else None
+                    rows_data.append({'row': row_list, 'username': uname})
+            else:
+                content = downloaded_file.decode('utf-8', errors='ignore')
+                for line in content.splitlines():
+                    if not line.strip():
+                        continue
+                    parts = re.split(r'[:|,\s\t]+', line.strip())
+                    uname = extract_username(parts[0]) if parts else None
+                    rows_data.append({'row': [line.strip()], 'username': uname})
+        except Exception:
+            pass
+    elif message.content_type == 'text':
+        for line in message.text.splitlines():
+            if not line.strip():
+                continue
+            parts = re.split(r'[:|,\s\t]+', line.strip())
+            uname = extract_username(parts[0]) if parts else None
+            rows_data.append({'row': [line.strip()], 'username': uname})
+    return rows_data
+
+def approve_single_account(acc):
+    if acc.get('status') == 'pending':
+        acc['status'] = 'approved'
+        target_uid = acc['user_id']
+        rw = SETTINGS['reward_tw_token'] if acc.get('task_name') == SETTINGS['task1_name'] else SETTINGS['reward_tw_2fa']
+        
+        u_data = get_user_data(target_uid)
+        u_data['balance'] += rw
+        u_data['total_earned'] += rw
+        u_data['completed_tasks'] += 1
+        
+        if SETTINGS.get('ref_enabled', True):
+            referrer_id = u_data.get('referred_by')
+            if referrer_id and referrer_id in users:
+                pct = SETTINGS.get('ref_commission_pct', 10.0)
+                commission = rw * (pct / 100.0)
+                ref_user = get_user_data(referrer_id)
+                ref_user['balance'] += commission
+                ref_user['total_earned'] += commission
+                ref_user['ref_earned'] = ref_user.get('ref_earned', 0.0) + commission
+                try:
+                    bot.send_message(referrer_id, f"👥 **Referral Commission!**\nYour referral completed a task, you earned **${commission:.4f}** commission!")
+                except Exception:
+                    pass
+
+        try:
+            bot.send_message(target_uid, f"✅ Your submitted account ({acc.get('username')}) has been approved! ${rw:.4f} added to your balance.")
+        except Exception:
+            pass
+        return True
+    return False
+
+def reject_single_account(acc):
+    if acc.get('status') == 'pending':
+        acc['status'] = 'rejected'
+        target_uid = acc['user_id']
+        if acc.get('username'):
+            rejected_history_db.add(acc.get('username').lower().strip())
+        try:
+            bot.send_message(target_uid, f"❌ Your submitted account ({acc.get('username')}) has been rejected by admin.")
+        except Exception:
+            pass
+        return True
+    return False
+
+def distribute_top_rewards():
+    sorted_u = sorted(users.items(), key=lambda x: x[1].get('completed_tasks', 0), reverse=True)
+    rewards = SETTINGS.get('top_rewards', {1: 1.00, 2: 0.50, 3: 0.30, 4: 0.20, 5: 0.10})
+    
+    rewarded_text = "🎉 **Top Leaderboard Winners & Rewards Added:**\n\n"
+    count = 0
+    for idx, (uid, udata) in enumerate(sorted_u[:5], 1):
+        bonus = rewards.get(idx, 0.0)
+        if bonus > 0 and udata.get('completed_tasks', 0) > 0:
+            udata['balance'] += bonus
+            udata['total_earned'] += bonus
+            rewarded_text += f"{idx}. {udata['name']} (`{uid}`) - Bonus: `${bonus:.2f}`\n"
+            try:
+                bot.send_message(uid, f"🏆 Congratulations! You ranked **#{idx}** on the Top Leaderboard and received a bonus of **${bonus:.2f}**!")
+            except Exception:
+                pass
+            count += 1
+            
+    for uid in users:
+        users[uid]['completed_tasks'] = 0
+        
+    SETTINGS['top_reset_timestamp'] = time.time() + (SETTINGS.get('top_reset_interval_mins', 1440) * 60)
+    return rewarded_text if count > 0 else "❌ No active users with completed tasks to reward."
 
 @bot.message_handler(commands=['start'])
 def start(message):
     user_id = message.from_user.id
     if user_id in blocked_users:
-        bot.send_message(user_id, "❌ আপনাকে এই বট থেকে ব্লক করা হয়েছে!")
+        bot.send_message(user_id, "❌ You are blocked!")
         return
+
+    name = message.from_user.first_name or "User"
+    username = message.from_user.username
+    is_new_user = user_id not in users
+    u_data = get_user_data(user_id, name, username)
 
     args = message.text.split()
-    
-    if user_id not in users:
-        users[user_id] = {'balance': 0.0, 'referrals': 0, 'referred_by': None}
-        if len(args) > 1 and args[1].isdigit():
-            referrer_id = int(args[1])
-            if referrer_id != user_id and referrer_id in users:
-                users[user_id]['referred_by'] = referrer_id
-                users[referrer_id]['balance'] += 1000.0  # $1000 Referral Bonus
-                users[referrer_id]['referrals'] += 1
-                try:
-                    bot.send_message(referrer_id, f"🎉 New Referral! You earned <b>$1000</b>!", parse_mode="HTML")
-                except:
-                    pass
-
-    if not is_subscribed(user_id):
-        bot.send_message(user_id, f"⚠️ You must join {CHANNEL_USERNAME} to use this bot!", reply_markup=check_join_keyboard())
-        return
-
-    bot.send_message(user_id, "✨ Welcome to Temp Mail Bot! Select an option below:", reply_markup=main_keyboard(user_id))
-
-@bot.callback_query_handler(func=lambda call: call.data == "check_subscription")
-def verify_sub(call):
-    user_id = call.from_user.id
-    if is_subscribed(user_id):
-        bot.answer_callback_query(call.id, "✅ Verified!")
-        bot.send_message(user_id, "✨ Welcome! Select an option below:", reply_markup=main_keyboard(user_id))
-    else:
-        bot.answer_callback_query(call.id, "❌ You haven't joined yet!", show_alert=True)
-
-# ইনলাইন ব্লক/আনব্লক বাটন হ্যান্ডলার
-@bot.callback_query_handler(func=lambda call: call.data.startswith(("block_", "unblock_")))
-def handle_block_callback(call):
-    if call.from_user.id != ADMIN_ID:
-        return
-    
-    action, target_id_str = call.data.split("_")
-    target_id = int(target_id_str)
-    
-    if action == "block":
-        blocked_users.add(target_id)
-        bot.answer_callback_query(call.id, f"✅ User {target_id} Blocked!")
-        bot.send_message(call.message.chat.id, f"🚫 <b>User <code>{target_id}</code> has been blocked!</b>", parse_mode="HTML")
-    elif action == "unblock":
-        if target_id in blocked_users:
-            blocked_users.remove(target_id)
-        bot.answer_callback_query(call.id, f"✅ User {target_id} Unblocked!")
-        bot.send_message(call.message.chat.id, f"✅ <b>User <code>{target_id}</code> has been unblocked!</b>", parse_mode="HTML")
-
-@bot.message_handler(func=lambda m: m.text == "🛡️ Admin Panel")
-def admin_panel(message):
-    user_id = message.from_user.id
-    if user_id != ADMIN_ID:
-        return
-    
-    admin_markup = ReplyKeyboardMarkup(resize_keyboard=True)
-    admin_markup.row(KeyboardButton("👥 Total Users"), KeyboardButton("🔙 Main Menu"))
-    bot.send_message(user_id, "🛡️ <b>Welcome to Admin Panel</b>\n\nChoose an option below or use commands:\n👉 <code>/block UID</code> - Block a user\n👉 <code>/unblock UID</code> - Unblock a user", reply_markup=admin_markup, parse_mode="HTML")
-
-@bot.message_handler(func=lambda m: m.text == "🔙 Main Menu")
-def main_menu(message):
-    user_id = message.from_user.id
-    bot.send_message(user_id, "🏠 Returned to Main Menu:", reply_markup=main_keyboard(user_id))
-
-@bot.message_handler(func=lambda m: m.text == "👥 Total Users")
-def admin_total_users(message):
-    user_id = message.from_user.id
-    if user_id != ADMIN_ID:
-        return
-    
-    if not users:
-        bot.send_message(user_id, "📭 বটে এখনো কোনো ইউজার নেই!")
-        return
-    
-    total_users = len(users)
-    bot.send_message(user_id, f"👥 <b>Total Users: {total_users}</b>", parse_mode="HTML")
-    
-    for uid, data in users.items():
+    if is_new_user and len(args) > 1 and args[1].startswith('ref_'):
         try:
-            chat_info = bot.get_chat(uid)
-            name = chat_info.first_name if chat_info.first_name else "No Name"
-            username = f"@{chat_info.username}" if chat_info.username else "No Username"
-        except:
-            name = "Unknown"
-            username = "N/A"
-            
-        balance = data.get('balance', 0.0)
-        status = "🔴 Blocked" if uid in blocked_users else "🟢 Active"
-        
-        info_text = f"👤 <b>Name:</b> {name}\n🆔 <b>UID:</b> <code>{uid}</code>\n🔗 <b>Username:</b> {username}\n💰 <b>Balance:</b> ${balance:.2f}\n📌 <b>Status:</b> {status}"
-        
-        markup = InlineKeyboardMarkup()
-        if uid != ADMIN_ID:
-            if uid in blocked_users:
-                markup.add(InlineKeyboardButton("✅ Unblock User", callback_data=f"unblock_{uid}"))
-            else:
-                markup.add(InlineKeyboardButton("🚫 Block User", callback_data=f"block_{uid}"))
-        
-        bot.send_message(user_id, info_text, reply_markup=markup, parse_mode="HTML")
-
-@bot.message_handler(commands=['block'])
-def block_user_cmd(message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    args = message.text.split()
-    if len(args) > 1 and args[1].isdigit():
-        target_id = int(args[1])
-        blocked_users.add(target_id)
-        bot.send_message(message.chat.id, f"✅ ইউজার আইডি <code>{target_id}</code> সফলভাবে ব্লক করা হয়েছে।", parse_mode="HTML")
-    else:
-        bot.send_message(message.chat.id, "⚠️ সঠিক নিয়মে লিখুন। যেমন: <code>/block 123456789</code>", parse_mode="HTML")
-
-@bot.message_handler(commands=['unblock'])
-def unblock_user_cmd(message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    args = message.text.split()
-    if len(args) > 1 and args[1].isdigit():
-        target_id = int(args[1])
-        if target_id in blocked_users:
-            blocked_users.remove(target_id)
-            bot.send_message(message.chat.id, f"✅ ইউজার আইডি <code>{target_id}</code> আনব্লক করা হয়েছে।", parse_mode="HTML")
-        else:
-            bot.send_message(message.chat.id, "⚠️ এই ইউজারটি ব্লক লিস্টে নেই।")
-
-@bot.message_handler(commands=['users'])
-def users_cmd(message):
-    admin_total_users(message)
-
-@bot.message_handler(func=lambda m: m.text == "📧 Gen Mail")
-def gen_mail(message):
-    user_id = message.from_user.id
-    if user_id in blocked_users:
-        bot.send_message(user_id, "❌ আপনাকে এই বট থেকে ব্লক করা হয়েছে!")
-        return
-    if user_id not in users:
-        users[user_id] = {'balance': 0.0, 'referrals': 0, 'referred_by': None}
-
-    if not is_subscribed(user_id):
-        bot.send_message(user_id, f"⚠️ Please join {CHANNEL_USERNAME} first!", reply_markup=check_join_keyboard())
-        return
-
-    msg = bot.send_message(user_id, "🔄 Generating email, please wait...")
-    
-    success = False
-    email = ""
-    token = ""
-    
-    for _ in range(3):
-        try:
-            dom_res = session.get(f"{BASE_URL}/domains", timeout=5)
-            if dom_res.status_code != 200:
-                continue
+            ref_id = int(args[1].replace('ref_', ''))
+            if ref_id != user_id and ref_id in users and not u_data.get('referred_by'):
+                u_data['referred_by'] = ref_id
+                ref_user = get_user_data(ref_id)
+                ref_user['referral_count'] = ref_user.get('referral_count', 0) + 1
+                if 'referrals_list' not in ref_user:
+                    ref_user['referrals_list'] = []
+                ref_user['referrals_list'].append({'uid': user_id, 'time': time.time()})
                 
-            domains = dom_res.json().get('hydra:member', [])
-            if not domains:
-                continue
-            
-            domain = domains[0]['domain']
-            username = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
-            email = f"{username}@{domain}"
-            password = "Password123!"
-
-            res = session.post(f"{BASE_URL}/accounts", json={"address": email, "password": password}, timeout=5)
-            if res.status_code == 201:
-                token_res = session.post(f"{BASE_URL}/token", json={"address": email, "password": password}, timeout=5)
-                if token_res.status_code == 200:
-                    token = token_res.json()['token']
-                    success = True
-                    break
+                try:
+                    bot.send_message(ref_id, f"👥 **Referral Notification!**\nA new member joined from your referral link: {name}")
+                except Exception:
+                    pass
         except Exception:
             pass
-            
-    if success:
-        headers = {"Authorization": f"Bearer {token}"}
-        initial_msg_id = None
-        try:
-            res_msg = session.get(f"{BASE_URL}/messages", headers=headers, timeout=3)
-            if res_msg.status_code == 200:
-                msgs = res_msg.json().get('hydra:member', [])
-                if msgs:
-                    initial_msg_id = msgs[0]['id']
-        except:
-            pass
 
-        active_mails[user_id] = {'email': email, 'token': token, 'last_msg_id': initial_msg_id, 'last_checked_msg_id': initial_msg_id}
-        
-        funny_email_quotes = [
-            "কি রাগ করলা? নাও টাটকা ইমেইল নাও!",
-            "হা হা, এই নাও তোমার কাঙ্ক্ষিত ইমেইল!",
-            "রাগ করো কেন বস, এই নাও ফ্রেশ মেইল!",
-            "এবারে কাজ হবে তো? এই নাও ইমেইল!"
-        ]
-        selected_email_line = random.choice(funny_email_quotes)
-        
-        bot.edit_message_text(f"✅ <b>Your Temp Email:</b>\n\n<code>{email}</code>\n\n💬 <i>{selected_email_line}</i>", user_id, msg.message_id, parse_mode="HTML")
-        
-        threading.Thread(target=auto_check_otp, args=(user_id, token), daemon=True).start()
-    else:
-        bot.edit_message_text("⚠️ Server busy, try again.", user_id, msg.message_id)
+    if not is_subscribed(user_id):
+        markup = telebot.types.InlineKeyboardMarkup()
+        markup.add(telebot.types.InlineKeyboardButton("Join Channel", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}"))
+        bot.send_message(user_id, f"You must join {CHANNEL_USERNAME} to use this bot!", reply_markup=markup)
+        return
 
-def auto_check_otp(user_id, token):
-    funny_quotes = [
-        "🏃‍♂️ লুঙ্গি পরে দৌড়াও, কোড চলে এসেছে!",
-        "🔥 বস, কাঙ্ক্ষিত মাল (OTP) হাজির!",
-        "⚡ বিদ্যুৎ গতিতে কোড চলে এল, জলদি কপি করো!",
-        "😎 চোর পুলিশ খেলা শেষ, এই নাও তোমার কোড!"
-    ]
-    
-    headers = {"Authorization": f"Bearer {token}"}
-    for _ in range(5000):
-        if active_mails.get(user_id, {}).get('token') != token:
-            break
-        try:
-            res = session.get(f"{BASE_URL}/messages", headers=headers, timeout=5)
-            if res.status_code == 200:
-                messages = res.json().get('hydra:member', [])
-                if messages:
-                    msg_id = messages[0]['id']
-                    if active_mails.get(user_id, {}).get('last_msg_id') != msg_id:
-                        
-                        msg_detail = session.get(f"{BASE_URL}/messages/{msg_id}", headers=headers, timeout=5).json()
-                        
-                        if mail_is_valid_otp(msg_detail):
-                            active_mails[user_id]['last_msg_id'] = msg_id
-                            active_mails[user_id]['last_checked_msg_id'] = msg_id
-                            
-                            body = msg_detail.get('text', '') or msg_detail.get('intro', '')
-                            codes = re.findall(r'\b\d{4,6}\b', body)
-                            otp_code = codes[0] if codes else "Not found"
-                            selected_funny_line = random.choice(funny_quotes)
+    bot.send_message(user_id, "Welcome to Taskly Bot! Select an option below:", reply_markup=main_keyboard(user_id))
 
-                            if user_id not in users:
-                                users[user_id] = {'balance': 0.0, 'referrals': 0, 'referred_by': None}
-                            
-                            users[user_id]['balance'] += 100.0
-
-                            referrer_id = users[user_id].get('referred_by')
-                            if referrer_id and referrer_id in users:
-                                commission = 100.0 * 0.99
-                                users[referrer_id]['balance'] += commission
-                                try:
-                                    bot.send_message(referrer_id, f"💸 <b>Referral Commission!</b>\n\nYour referral earned an OTP, you received <b>${commission:.2f}</b> (99%)!", parse_mode="HTML")
-                                except:
-                                    pass
-
-                            bot.send_message(
-                                user_id, 
-                                f"📩 <b>OTP Code Received!</b>\n\n<code>{otp_code}</code>\n\n💬 <i>{selected_funny_line}</i>\n\n🎁 You earned <b>$100</b>!", 
-                                parse_mode="HTML"
-                            )
-                        else:
-                            active_mails[user_id]['last_msg_id'] = msg_id
-        except:
-            pass
-        time.sleep(0.3)
-
-@bot.message_handler(func=lambda m: m.text == "📩 Check OTP")
-def check_otp(message):
+@bot.message_handler(content_types=['text', 'photo', 'video', 'document'], func=lambda m: True)
+def handle_all_messages(message):
+    global submitted_accounts, rejected_accounts_db, withdraw_requests, videos_list, downloaded_status, blocked_users, lifetime_usernames, rejected_history_db
     user_id = message.from_user.id
     if user_id in blocked_users:
-        bot.send_message(user_id, "❌ আপনাকে এই বট থেকে ব্লক করা হয়েছে!")
         return
-    if user_id not in users:
-        users[user_id] = {'balance': 0.0, 'referrals': 0, 'referred_by': None}
 
-    if user_id not in active_mails or 'token' not in active_mails[user_id]:
-        bot.send_message(user_id, "⚠️ আগে একটি নতুন মেইল জেনারেট করুন (Gen Mail এ ক্লিক করুন)!")
-        return
-    
-    mail_info = active_mails[user_id]
-    headers = {"Authorization": f"Bearer {mail_info['token']}"}
-    try:
-        res = session.get(f"{BASE_URL}/messages", headers=headers, timeout=10)
-        if res.status_code == 200:
-            messages = res.json().get('hydra:member', [])
-            if messages:
-                msg_id = messages[0]['id']
-                msg_detail = session.get(f"{BASE_URL}/messages/{msg_id}", headers=headers, timeout=10).json()
-                
-                if mail_is_valid_otp(msg_detail):
-                    if mail_info.get('last_checked_msg_id') != msg_id:
-                        active_mails[user_id]['last_checked_msg_id'] = msg_id
-                        active_mails[user_id]['last_msg_id'] = msg_id
-                        users[user_id]['balance'] += 100.0
-                        
-                        referrer_id = users[user_id].get('referred_by')
-                        if referrer_id and referrer_id in users:
-                            commission = 100.0 * 0.99
-                            users[referrer_id]['balance'] += commission
-                            try:
-                                bot.send_message(referrer_id, f"💸 <b>Referral Commission!</b>\n\nYour referral checked an OTP, you received <b>${commission:.2f}</b> (99%)!", parse_mode="HTML")
-                            except:
-                                pass
-                    
-                    body = msg_detail.get('text', '') or msg_detail.get('intro', '')
-                    codes = re.findall(r'\b\d{4,6}\b', body)
-                    otp_code = codes[0] if codes else "Not found"
-                    
-                    bot.send_message(
-                        user_id, 
-                        f"📩 <b>Latest OTP Code:</b>\n\n<code>{otp_code}</code>\n\n😎 মালের কোনো ভেজাল নাই, টাটকা কোড!\n\n🎁 You earned <b>$100</b>!", 
-                        parse_mode="HTML"
-                    )
-                else:
-                    bot.send_message(user_id, "⌛ মেইল বক্সে কোনো নতুন বা আসল ওটিপি কোড আসেনি!")
+    if user_id == ADMIN_ID and message.content_type == 'text':
+        t_clean = message.text.strip()
+        if t_clean in ["👑 Admin Panel", "Admin Panel", "📊 Database Stats", "🏠 Main Menu", "❌ Cancel"]:
+            user_steps.pop(ADMIN_ID, None)
+            if t_clean in ["👑 Admin Panel", "Admin Panel"]:
+                bot.send_message(ADMIN_ID, "👑 **Admin Panel - Control Center**", reply_markup=admin_panel_keyboard(), parse_mode="Markdown")
+                return
+            elif t_clean == "📊 Database Stats":
+                bot.send_message(ADMIN_ID, "📊 **Database & Accounts Management**\n\nChoose an option below:", reply_markup=database_stats_keyboard(), parse_mode="Markdown")
+                return
+            elif t_clean in ["🏠 Main Menu", "❌ Cancel"]:
+                active_mails.pop(user_id, None)
+                user_acc_data.pop(user_id, None)
+                bot.send_message(user_id, "❌ Returned to Main Menu:", reply_markup=main_keyboard(user_id))
+                return
+
+    if user_id == ADMIN_ID:
+        admin_step = user_steps.get(ADMIN_ID)
+        
+        if admin_step == 'awaiting_batch_pin':
+            user_steps.pop(ADMIN_ID, None)
+            entered_pin = message.text.strip()
+            correct_pin = str(SETTINGS.get('admin_pin', '4875'))
+            if entered_pin == correct_pin:
+                bot.send_message(ADMIN_ID, "🔓 **Password correct!** Panel unlocked:", reply_markup=batch_panel_keyboard(), parse_mode="Markdown")
             else:
-                empty_funny_lines = [
-                    "যার বউ নেই তার কোড ও নাই! একটু অপেক্ষা করো বস।",
-                    "মেইল বক্স একদম ফাঁকা, কোড আসার এখনো সময় হয়নি!",
-                    "খালি হাত নিয়ে ঘরে ফেরা লাগবে না, আরেকটু ওয়েট করো!",
-                    "কোড কি তোমার মামাবাড়ির আবদার নাকি? একটু পরে আবার চেক করো!"
-                ]
-                selected_empty_line = random.choice(empty_funny_lines)
-                bot.send_message(user_id, f"⌛ {selected_empty_line}")
+                bot.send_message(ADMIN_ID, "❌ **Incorrect PIN!** Access denied. Click the button to try again:", reply_markup=admin_panel_keyboard(), parse_mode="Markdown")
+            return
+
+        if admin_step == 'admin_awaiting_deduplicate_file':
+            rows_data = parse_full_accounts_file(message)
+            user_steps.pop(ADMIN_ID, None)
+            
+            if not rows_data:
+                bot.send_message(ADMIN_ID, "❌ No data found in the uploaded file/text! Please try again:", reply_markup=database_stats_keyboard())
+                return
+            
+            seen_rows = set()
+            unique_rows = []
+            duplicate_rows = []
+
+            for item in rows_data:
+                row_str = " | ".join([str(x) for x in item['row']]).strip()
+                if row_str in seen_rows:
+                    duplicate_rows.append(item['row'])
+                else:
+                    seen_rows.add(row_str)
+                    unique_rows.append(item['row'])
+
+            wb_unique = openpyxl.Workbook()
+            ws_unique = wb_unique.active
+            ws_unique.title = "Unique_Accounts"
+            for r in unique_rows:
+                ws_unique.append(r)
+            
+            file_unique = io.BytesIO()
+            wb_unique.save(file_unique)
+            file_unique.seek(0)
+            file_unique.name = "unique_accounts.xlsx"
+
+            wb_dup = openpyxl.Workbook()
+            ws_dup = wb_dup.active
+            ws_dup.title = "Duplicate_Accounts"
+            for r in duplicate_rows:
+                ws_dup.append(r)
+            
+            file_dup = io.BytesIO()
+            wb_dup.save(file_dup)
+            file_dup.seek(0)
+            file_dup.name = "duplicate_accounts.xlsx"
+
+            summary_msg = (
+                f"📊 **File Deduplication Summary:**\n"
+                f"• Total Rows Checked: `{len(rows_data)}`\n"
+                f"• Unique / Good Accounts: `{len(unique_rows)}`\n"
+                f"• Duplicate Accounts: `{len(duplicate_rows)}`"
+            )
+            bot.send_message(ADMIN_ID, summary_msg, parse_mode="Markdown")
+
+            if unique_rows:
+                bot.send_document(ADMIN_ID, file_unique, caption="✅ **Unique Accounts Excel File**")
+            if duplicate_rows:
+                bot.send_document(ADMIN_ID, file_dup, caption="⚠️ **Duplicate Accounts Excel File**")
+
+            bot.send_message(ADMIN_ID, "✅ File deduplication completed successfully!", reply_markup=database_stats_keyboard())
+            return
+
+        if admin_step == 'admin_awaiting_lifetime_history':
+            usernames = process_file_or_text_usernames(message)
+            user_steps.pop(ADMIN_ID, None)
+            
+            if not usernames:
+                bot.send_message(ADMIN_ID, "❌ No valid usernames found in the file or text! Please try again:", reply_markup=database_stats_keyboard())
+                return
+            
+            for u in usernames:
+                lifetime_usernames.add(u.lower())
+            
+            bot.send_message(ADMIN_ID, f"✅ Successfully added `{len(usernames)}` usernames to the Lifetime Database!\nTotal Lifetime Usernames stored: `{len(lifetime_usernames)}`", reply_markup=database_stats_keyboard(), parse_mode="Markdown")
+            return
+
+        elif admin_step == 'admin_awaiting_filter_file':
+            rows_data = parse_full_accounts_file(message)
+            user_steps.pop(ADMIN_ID, None)
+            
+            if not rows_data:
+                bot.send_message(ADMIN_ID, "❌ No data found in the uploaded file/text! Please try again:", reply_markup=database_stats_keyboard())
+                return
+            
+            all_known = set(lifetime_usernames)
+            for acc in submitted_accounts:
+                if acc.get('username'):
+                    all_known.add(acc.get('username').lower().strip())
+
+            new_rows = []
+            duplicate_rows = []
+
+            for item in rows_data:
+                uname = item['username']
+                if uname and uname.lower().strip() in all_known:
+                    duplicate_rows.append(item['row'])
+                else:
+                    new_rows.append(item['row'])
+                    if uname:
+                        lifetime_usernames.add(uname.lower().strip())
+
+            wb_new = openpyxl.Workbook()
+            ws_new = wb_new.active
+            ws_new.title = "New_Accounts"
+            for r in new_rows:
+                ws_new.append(r)
+            
+            file_new = io.BytesIO()
+            wb_new.save(file_new)
+            file_new.seek(0)
+            file_new.name = "new_accounts.xlsx"
+
+            wb_dup = openpyxl.Workbook()
+            ws_dup = wb_dup.active
+            ws_dup.title = "Duplicate_Accounts"
+            for r in duplicate_rows:
+                ws_dup.append(r)
+            
+            file_dup = io.BytesIO()
+            wb_dup.save(file_dup)
+            file_dup.seek(0)
+            file_dup.name = "duplicate_old_accounts.xlsx"
+
+            summary_msg = (
+                f"📊 **Account Filter & Split Summary:**\n"
+                f"• Total Checked: `{len(rows_data)}`\n"
+                f"• Brand New Accounts: `{len(new_rows)}`\n"
+                f"• Already Existed (Old/Duplicate): `{len(duplicate_rows)}`"
+            )
+            bot.send_message(ADMIN_ID, summary_msg, parse_mode="Markdown")
+
+            if new_rows:
+                bot.send_document(ADMIN_ID, file_new, caption="🟢 **New Accounts Excel File**")
+            if duplicate_rows:
+                bot.send_document(ADMIN_ID, file_dup, caption="🔴 **Already Submitted / Old Accounts Excel File**")
+
+            bot.send_message(ADMIN_ID, "✅ Filtering and splitting completed successfully!", reply_markup=database_stats_keyboard())
+            return
+
+        elif admin_step == 'admin_awaiting_extract_cookies':
+            rows_data = parse_full_accounts_file(message)
+            user_steps.pop(ADMIN_ID, None)
+            
+            if not rows_data:
+                bot.send_message(ADMIN_ID, "❌ ফাইল বা টেক্সটে কোনো ডাটা পাওয়া যায়নি!", reply_markup=admin_panel_keyboard())
+                return
+
+            msg = bot.send_message(ADMIN_ID, f"⏳ {len(rows_data)} টি একাউন্ট থেকে Auth Token এক্সট্র্যাক্ট করা হচ্ছে, অপেক্ষা করুন...")
+            
+            extracted_rows = []
+            add_colon = SETTINGS.get('extractor_colon_enabled', True)
+            
+            for item in rows_data:
+                row = item['row']
+                full_line = " ".join([str(x) for x in row])
+                
+                username = str(row[0]).replace(":", "").strip() if len(row) > 0 and row[0] is not None else ""
+                password = str(row[1]).replace(":", "").strip() if len(row) > 1 and row[1] is not None else ""
+                two_fa = str(row[2]).replace(":", "").strip() if len(row) > 2 and row[2] is not None else ""
+                
+                auth_token = extract_auth_token(full_line)
+                if not auth_token or auth_token in [username, password, two_fa]:
+                    cookies_text = row[3] if len(row) > 3 else full_line
+                    auth_token = extract_auth_token(cookies_text)
+                
+                if add_colon:
+                    u_val = f"{username}:" if username else ""
+                    p_val = f"{password}:" if password else ""
+                    t_val = f"{two_fa}:" if two_fa else ""
+                else:
+                    u_val = username
+                    p_val = password
+                    t_val = two_fa
+                
+                extracted_rows.append([u_val, p_val, t_val, auth_token])
+
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Extracted_Tokens"
+            ws.append(["USERNAME", "PASSWORD", "2FA KEY", "AUTH TOKEN"])
+            
+            for r in extracted_rows:
+                ws.append(r)
+            
+            file_stream = io.BytesIO()
+            wb.save(file_stream)
+            file_stream.seek(0)
+            file_stream.name = "extracted_auth_token_accounts.xlsx"
+
+            bot.delete_message(ADMIN_ID, msg.message_id)
+            bot.send_document(
+                ADMIN_ID, 
+                file_stream, 
+                caption=f"✅ **Auth Token Extraction সম্পন্ন হয়েছে!**\n\n• মোট প্রসেসড একাউন্ট: `{len(extracted_rows)}`\n• Colons (:): `{'ON' if add_colon else 'OFF'}`",
+                reply_markup=admin_panel_keyboard()
+            )
+            return
+
+        elif admin_step == 'admin_awaiting_custom_usernames':
+            rows_data = parse_full_accounts_file(message)
+            user_steps.pop(ADMIN_ID, None)
+            
+            if not rows_data:
+                bot.send_message(ADMIN_ID, "❌ No valid accounts found!", reply_markup=admin_panel_keyboard())
+                return
+
+            msg = bot.send_message(ADMIN_ID, f"⏳ Checking {len(rows_data)} accounts for duplicates and live status...")
+            
+            good_accounts = []
+            suspended_accounts = []
+            duplicate_accounts = []  
+            seen_in_this_file = set()
+
+            all_known_row_strs = set()
+            for acc in submitted_accounts:
+                row_s = " | ".join([str(x) for x in acc.get('row', [])]).strip()
+                if row_s:
+                    all_known_row_strs.add(row_s)
+
+            for item in rows_data:
+                uname = item['username']
+                clean_uname = uname.lower().strip() if uname else ''
+                row_str = " | ".join([str(x) for x in item['row']]).strip()
+                
+                if clean_uname and clean_uname in rejected_history_db:
+                    suspended_accounts.append(item)
+                    continue
+
+                is_dup = False
+                if row_str and row_str in all_known_row_strs:
+                    is_dup = True
+                elif row_str and row_str in seen_in_this_file:
+                    is_dup = True
+                else:
+                    if row_str:
+                        seen_in_this_file.add(row_str)
+
+                if is_dup:
+                    duplicate_accounts.append(item)
+                    continue
+
+                if uname:
+                    st = check_status_by_username(uname)
+                    if st == 'active':
+                        good_accounts.append(item)
+                        if row_str:
+                            all_known_row_strs.add(row_str)
+                    else:
+                        suspended_accounts.append(item)
+                else:
+                    suspended_accounts.append(item)
+                time.sleep(0.05)
+
+            pct = SETTINGS.get('custom_check_reject_pct', 3.5)
+            reject_enabled = SETTINGS.get('custom_check_reject_enabled', True)
+
+            if reject_enabled and pct > 0 and good_accounts and len(rows_data) >= 30:
+                total_good = len(good_accounts)
+                force_reject_count = int(round(total_good * (pct / 100.0)))
+                force_reject_count = max(0, min(force_reject_count, total_good))
+
+                if force_reject_count > 0:
+                    selected_to_reject = random.sample(good_accounts, force_reject_count)
+                    new_good_accs = []
+                    for item in good_accounts:
+                        if item in selected_to_reject:
+                            if item.get('username'):
+                                rejected_history_db.add(item.get('username').lower().strip())
+                            
+                            item_copy = {
+                                'username': item.get('username'),
+                                'row': list(item.get('row', []))
+                            }
+                            if len(item_copy['row']) > 0 and item_copy['row'][0]:
+                                item_copy['row'][0] = alter_string_slightly(item_copy['row'][0])
+                            if len(item_copy['row']) > 1 and item_copy['row'][1]:
+                                item_copy['row'][1] = alter_string_slightly(item_copy['row'][1])
+                            suspended_accounts.append(item_copy)
+                        else:
+                            new_good_accs.append(item)
+                    good_accounts = new_good_accs
+
+            bot.delete_message(ADMIN_ID, msg.message_id)
+
+            all_accs = good_accounts + suspended_accounts + duplicate_accounts
+            max_len = max([len(acc['row']) for acc in all_accs]) if all_accs else 2
+            out_headers = []
+            for i in range(max_len):
+                if i == 0: out_headers.append("USERNAME")
+                elif i == 1: out_headers.append("PASSWORD")
+                elif i == 2: out_headers.append("2FA KEY")
+                elif i == 3: out_headers.append("AUTH TOKEN")
+                else: out_headers.append(f"COLUMN {i+1}")
+
+            wb_good = openpyxl.Workbook()
+            ws_good = wb_good.active
+            ws_good.title = "Good_Accounts"
+            ws_good.append(list(out_headers) + ["STATUS"])
+            for acc in good_accounts:
+                ws_good.append(list(acc['row']) + ["Active / Good"])
+            
+            file_good = io.BytesIO()
+            wb_good.save(file_good)
+            file_good.seek(0)
+            file_good.name = "good_twitter_accounts.xlsx"
+
+            summary_text = (
+                f"📊 **Custom Bulk Username & Duplicate Check Summary:**\n"
+                f"• Total Checked: `{len(rows_data)}`\n"
+                f"• Good/Active: `{len(good_accounts)}`\n"
+                f"• Suspended/Dead: `{len(suspended_accounts)}`\n"
+                f"• Duplicate (Original): `{len(duplicate_accounts)}`"
+            )
+            bot.send_message(ADMIN_ID, summary_text, parse_mode="Markdown")
+
+            if good_accounts:
+                bot.send_document(ADMIN_ID, file_good, caption="🟢 **Good / Active Accounts Excel**")
+
+            if suspended_accounts:
+                wb_sus = openpyxl.Workbook()
+                ws_sus = wb_sus.active
+                ws_sus.title = "Rejected_Accounts"
+                ws_sus.append(list(out_headers) + ["REASON / STATUS"])
+                for acc in suspended_accounts:
+                    ws_sus.append(list(acc['row']) + ["Rejected (Suspended)"])
+                
+                file_sus = io.BytesIO()
+                wb_sus.save(file_sus)
+                file_sus.seek(0)
+                file_sus.name = "suspended_twitter_accounts.xlsx"
+                bot.send_document(ADMIN_ID, file_sus, caption="🔴 **Rejected / Suspended Accounts Excel**")
+
+            if duplicate_accounts:
+                wb_dup = openpyxl.Workbook()
+                ws_dup = wb_dup.active
+                ws_dup.title = "Duplicate_Accounts"
+                ws_dup.append(list(out_headers) + ["STATUS"])
+                for acc in duplicate_accounts:
+                    ws_dup.append(list(acc['row']) + ["Duplicate (Already Exists)"])
+                
+                file_dup = io.BytesIO()
+                wb_dup.save(file_dup)
+                file_dup.seek(0)
+                file_dup.name = "duplicate_twitter_accounts.xlsx"
+                bot.send_document(ADMIN_ID, file_dup, caption="🟡 **Duplicate Accounts Excel (Original / No Character Change)**")
+
+            bot.send_message(ADMIN_ID, "✅ Account check completed!", reply_markup=admin_panel_keyboard())
+            return
+
+        if admin_step and admin_step.startswith('admin_awaiting_payment_screenshot_'):
+            idx_str = admin_step.replace('admin_awaiting_payment_screenshot_', '')
+            user_steps.pop(ADMIN_ID, None)
+            try:
+                idx = int(idx_str)
+                if idx < len(withdraw_requests):
+                    req = withdraw_requests[idx]
+                    req['status'] = 'paid'
+                    target_uid = req['user_id']
+                    bdt_amount = req['amount_bdt']
+                    method = req['method']
+                    
+                    if message.content_type == 'photo':
+                        photo_id = message.photo[-1].file_id
+                        try:
+                            bot.send_photo(target_uid, photo_id, caption=f"✅ Your withdraw request has been successfully paid!\nAmount: ৳{bdt_amount:.2f} ({method})")
+                        except Exception:
+                            pass
+                        bot.send_message(ADMIN_ID, f"✅ Payment successfully completed and screenshot sent to the user!", reply_markup=admin_panel_keyboard())
+                    else:
+                        try:
+                            bot.send_message(target_uid, f"✅ Your withdraw request has been successfully paid!\nAmount: ৳{bdt_amount:.2f} ({method})")
+                        except Exception:
+                            pass
+                        bot.send_message(ADMIN_ID, f"✅ Payment successfully completed!", reply_markup=admin_panel_keyboard())
+            except Exception:
+                bot.send_message(ADMIN_ID, "❌ An error occurred, please try again.", reply_markup=admin_panel_keyboard())
+            return
+
+        if admin_step == 'admin_awaiting_video_input':
+            if message.content_type == 'video':
+                file_id = message.video.file_id
+                videos_list.append({'title': 'Tutorial Video', 'type': 'file', 'content': file_id})
+                user_steps.pop(ADMIN_ID, None)
+                bot.send_message(ADMIN_ID, f"✅ Video file successfully added!", reply_markup=video_mgmt_keyboard())
+                return
+            elif message.content_type == 'text':
+                txt = message.text.strip()
+                if txt.startswith("http"):
+                    videos_list.append({'title': 'Tutorial Video', 'type': 'url', 'content': txt})
+                    user_steps.pop(ADMIN_ID, None)
+                    bot.send_message(ADMIN_ID, f"✅ Video link successfully added!", reply_markup=video_mgmt_keyboard())
+                    return
+                else:
+                    bot.send_message(ADMIN_ID, "❌ Please provide a valid video link (http...) or upload a video file:")
+                    return
+
+        if admin_step == 'admin_user_mgmt_search':
+            user_steps.pop(ADMIN_ID, None)
+            query = message.text.strip()
+            clean_q = query.replace('@', '').lower()
+            
+            target_uid = None
+            if query.isdigit():
+                target_uid = int(query)
+            else:
+                for uid, u_info in users.items():
+                    u_name = str(u_info.get('name', '')).lower()
+                    u_username = str(u_info.get('username', '')).lower()
+                    if clean_q in u_name or clean_q in u_username:
+                        target_uid = uid
+                        break
+
+            if target_uid and target_uid in users:
+                u_data = get_user_data(target_uid)
+                st = "🔴 Blocked" if target_uid in blocked_users else "🟢 Active"
+                markup = telebot.types.InlineKeyboardMarkup()
+                if target_uid in blocked_users:
+                    markup.add(telebot.types.InlineKeyboardButton("🟢 Unblock User", callback_data=f"adm_unblock_{target_uid}"))
+                else:
+                    markup.add(telebot.types.InlineKeyboardButton("🔴 Block User", callback_data=f"adm_block_{target_uid}"))
+                markup.add(telebot.types.InlineKeyboardButton("💰 Edit Balance", callback_data=f"adm_edit_bal_{target_uid}"))
+
+                msg_txt = (
+                    f"👤 **User Profile Info:**\n\n"
+                    f"• Name: {u_data.get('name')}\n"
+                    f"• Username: @{u_data.get('username', 'N/A')}\n"
+                    f"• UID: `{target_uid}`\n"
+                    f"• Status: `{st}`\n"
+                    f"• Current Balance: `${u_data.get('balance', 0.0):.4f}`\n"
+                    f"• Total Lifetime Earned: `${u_data.get('total_earned', 0.0):.4f}`\n"
+                    f"• Completed Tasks: {u_data.get('completed_tasks', 0)}\n"
+                    f"• Total Referrals: {u_data.get('referral_count', 0)}"
+                )
+                bot.send_message(ADMIN_ID, msg_txt, reply_markup=markup, parse_mode="Markdown")
+            else:
+                bot.send_message(ADMIN_ID, f"❌ No registered user found with query (`{query}`)!", reply_markup=admin_panel_keyboard())
+            return
+
+        elif admin_step and admin_step.startswith('adm_set_bal_'):
+            try:
+                target_uid = int(admin_step.replace('adm_set_bal_', ''))
+                new_bal = float(message.text.strip())
+                if target_uid in users:
+                    users[target_uid]['balance'] = new_bal
+                    user_steps.pop(ADMIN_ID, None)
+                    bot.send_message(ADMIN_ID, f"✅ User (`{target_uid}`) balance successfully updated to **${new_bal:.4f}**.", reply_markup=admin_panel_keyboard(), parse_mode="Markdown")
+                    try:
+                        bot.send_message(target_uid, f"💰 Your balance was updated by admin. Current balance: **${new_bal:.4f}**", parse_mode="Markdown")
+                    except Exception:
+                        pass
+                else:
+                    user_steps.pop(ADMIN_ID, None)
+                    bot.send_message(ADMIN_ID, "❌ User not found!", reply_markup=admin_panel_keyboard())
+            except ValueError:
+                bot.send_message(ADMIN_ID, "❌ Please send a valid number (e.g. `5.50`):")
+            return
+
+        elif admin_step == 'admin_broadcast_msg':
+            user_steps.pop(ADMIN_ID, None)
+            success = 0
+            for uid in users:
+                try:
+                    bot.send_message(uid, f"📢 **Announcement:**\n\n{message.text}", parse_mode="Markdown")
+                    success += 1
+                except Exception:
+                    pass
+            bot.send_message(ADMIN_ID, f"✅ Broadcast sent successfully to {success} users!", reply_markup=admin_panel_keyboard())
+            return
+
+        elif admin_step == 'admin_search_uid_input':
+            user_steps.pop(ADMIN_ID, None)
+            search_query = message.text.strip()
+            clean_search = search_query.replace('@', '').lower()
+            
+            found_accounts = []
+            for acc in submitted_accounts:
+                acc_uid = str(acc.get('user_id', ''))
+                acc_uname = str(acc.get('username', '')).lower()
+                if search_query in acc_uid or clean_search in acc_uname:
+                    found_accounts.append(acc)
+
+            if not found_accounts:
+                bot.send_message(ADMIN_ID, f"❌ No accounts found for query: `{search_query}`", reply_markup=search_pending_menu(), parse_mode="Markdown")
+                return
+            
+            target_uids = list(set([acc['user_id'] for acc in found_accounts]))
+            
+            for target_uid_found in target_uids:
+                user_accs = [a for a in found_accounts if a.get('user_id') == target_uid_found]
+                u_info = get_user_data(target_uid_found)
+                
+                markup = telebot.types.InlineKeyboardMarkup()
+                markup.add(telebot.types.InlineKeyboardButton(f"✅ Approve All ({len(user_accs)})", callback_data=f"app_uid_{target_uid_found}"))
+                markup.add(telebot.types.InlineKeyboardButton(f"❌ Reject All ({len(user_accs)})", callback_data=f"rej_uid_{target_uid_found}"))
+                markup.add(telebot.types.InlineKeyboardButton("👁️ View Details", callback_data=f"view_uid_{target_uid_found}"))
+
+                summary_text = (
+                    f"🔍 **Search Match Result:**\n"
+                    f"• User Name: {u_info.get('name')}\n"
+                    f"• UID: `{target_uid_found}`\n"
+                    f"• Matching Accounts: `{len(user_accs)}`"
+                )
+                bot.send_message(ADMIN_ID, summary_text, parse_mode="Markdown", reply_markup=markup)
+            
+            bot.send_message(ADMIN_ID, "🔍 Search completed:", reply_markup=search_pending_menu())
+            return
+
+        elif admin_step == 'admin_batch_approve_input':
+            user_steps.pop(ADMIN_ID, None)
+            usernames = [u.strip().lower() for u in message.text.split()]
+            count = 0
+            for acc in submitted_accounts:
+                if acc.get('status') == 'pending' and acc.get('username', '').lower() in usernames:
+                    if approve_single_account(acc):
+                        count += 1
+            bot.send_message(ADMIN_ID, f"✅ Batch approve completed! Total `{count}` accounts approved.", reply_markup=admin_panel_keyboard(), parse_mode="Markdown")
+            return
+
+        elif admin_step == 'admin_batch_reject_input':
+            user_steps.pop(ADMIN_ID, None)
+            usernames = [u.strip().lower() for u in message.text.split()]
+            count = 0
+            for acc in submitted_accounts:
+                if acc.get('status') == 'pending' and acc.get('username', '').lower() in usernames:
+                    if reject_single_account(acc):
+                        count += 1
+            bot.send_message(ADMIN_ID, f"❌ Batch reject completed! Total `{count}` accounts rejected.", reply_markup=admin_panel_keyboard(), parse_mode="Markdown")
+            return
+
+        elif admin_step == 'admin_percentage_approve_input':
+            user_steps.pop(ADMIN_ID, None)
+            try:
+                pct = float(message.text.strip())
+                if not (0 <= pct <= 100):
+                    bot.send_message(ADMIN_ID, "❌ Percentage must be between 0 and 100.", reply_markup=admin_panel_keyboard())
+                    return
+
+                user_pending_dict = {}
+                for acc in submitted_accounts:
+                    if acc.get('status') == 'pending':
+                        uid = acc.get('user_id')
+                        if uid not in user_pending_dict:
+                            user_pending_dict[uid] = []
+                        user_pending_dict[uid].append(acc)
+
+                total_approved = 0
+                total_rejected = 0
+
+                for uid, accs in user_pending_dict.items():
+                    total_accs = len(accs)
+                    approve_count = int(round(total_accs * (pct / 100.0)))
+                    approve_count = max(0, min(approve_count, total_accs))
+
+                    for i, acc in enumerate(accs):
+                        if i < approve_count:
+                            if approve_single_account(acc):
+                                total_approved += 1
+                        else:
+                            if reject_single_account(acc):
+                                total_rejected += 1
+
+                bot.send_message(ADMIN_ID, f"✅ Percentage auto-process completed!\n• Approved: `{total_approved}`\n• Rejected: `{total_rejected}`\n• Rate: `{pct}%`", reply_markup=admin_panel_keyboard(), parse_mode="Markdown")
+            except ValueError:
+                bot.send_message(ADMIN_ID, "❌ Please send a valid number (e.g. `80`):", reply_markup=admin_panel_keyboard())
+            return
+
+        elif admin_step == 'admin_percentage_reject_input':
+            user_steps.pop(ADMIN_ID, None)
+            try:
+                pct = float(message.text.strip())
+                if not (0 <= pct <= 100):
+                    bot.send_message(ADMIN_ID, "❌ Percentage must be between 0 and 100.", reply_markup=admin_panel_keyboard())
+                    return
+
+                SETTINGS['custom_check_reject_pct'] = pct
+
+                user_pending_dict = {}
+                for acc in submitted_accounts:
+                    if acc.get('status') == 'pending':
+                        uid = acc.get('user_id')
+                        if uid not in user_pending_dict:
+                            user_pending_dict[uid] = []
+                        user_pending_dict[uid].append(acc)
+
+                total_approved = 0
+                total_rejected = 0
+
+                for uid, accs in user_pending_dict.items():
+                    total_accs = len(accs)
+                    reject_count = int(round(total_accs * (pct / 100.0)))
+                    reject_count = max(0, min(reject_count, total_accs))
+
+                    for i, acc in enumerate(accs):
+                        if i < reject_count:
+                            if reject_single_account(acc):
+                                total_rejected += 1
+                        else:
+                            if approve_single_account(acc):
+                                total_approved += 1
+
+                bot.send_message(ADMIN_ID, f"📉 Percentage Reject process completed!\n• New Custom Check Reject Rate updated to: `{pct}%`\n• Pending Rejected: `{total_rejected}`\n• Pending Approved: `{total_approved}`", reply_markup=admin_panel_keyboard(), parse_mode="Markdown")
+            except ValueError:
+                bot.send_message(ADMIN_ID, "❌ Please send a valid number (e.g. `2` or `5`):", reply_markup=admin_panel_keyboard())
+            return
+
+        elif admin_step == 'set_min_withdraw_limit':
+            user_steps.pop(ADMIN_ID, None)
+            try:
+                new_min = float(message.text.strip())
+                if new_min < 0:
+                    bot.send_message(ADMIN_ID, "❌ Limit cannot be negative.", reply_markup=payment_toggle_keyboard())
+                    return
+                SETTINGS['min_withdraw_bdt'] = new_min
+                bot.send_message(ADMIN_ID, f"✅ Minimum withdraw limit successfully updated to: ৳{new_min:.2f}", reply_markup=payment_toggle_keyboard(), parse_mode="Markdown")
+            except ValueError:
+                bot.send_message(ADMIN_ID, "❌ Please enter a valid number in BDT (e.g. `10` or `50`):", reply_markup=payment_toggle_keyboard())
+            return
+
+        elif admin_step == 'set_report_time_custom':
+            user_steps.pop(ADMIN_ID, None)
+            SETTINGS['task_report_timer_text'] = message.text.strip()
+            bot.send_message(ADMIN_ID, f"✅ Report timer text updated to: `{message.text.strip()}`", reply_markup=task_control_keyboard(), parse_mode="Markdown")
+            return
+
+        elif admin_step == 'set_custom_pwd_value':
+            user_steps.pop(ADMIN_ID, None)
+            SETTINGS['custom_pwd_value'] = message.text
+            SETTINGS['pwd_mode'] = 'same'
+            bot.send_message(ADMIN_ID, f"✅ Custom/Same password updated to: `{message.text}` (Mode set to Custom)", reply_markup=password_mgmt_keyboard(), parse_mode="Markdown")
+            return
+
+        elif admin_step == 'set_ref_commission_pct':
+            user_steps.pop(ADMIN_ID, None)
+            try:
+                pct = float(message.text.strip())
+                SETTINGS['ref_commission_pct'] = pct
+                bot.send_message(ADMIN_ID, f"✅ Referral commission updated to: `{pct}%`", reply_markup=referral_mgmt_keyboard(), parse_mode="Markdown")
+            except ValueError:
+                bot.send_message(ADMIN_ID, "❌ Please enter a valid number (e.g. 10 or 15):", reply_markup=referral_mgmt_keyboard())
+            return
+
+        elif admin_step == 'set_top_reset_mins_input':
+            try:
+                mins = int(message.text.strip())
+                SETTINGS['top_reset_interval_mins'] = mins
+                SETTINGS['top_reset_mode'] = 'custom_minutes'
+                SETTINGS['top_reset_timestamp'] = time.time() + (mins * 60)
+                user_steps.pop(ADMIN_ID, None)
+                bot.send_message(ADMIN_ID, f"✅ Leaderboard reset time updated to every `{mins}` minutes!", reply_markup=top_control_keyboard(), parse_mode="Markdown")
+            except ValueError:
+                bot.send_message(ADMIN_ID, "❌ Please send a valid number (e.g. 60 or 1440):", reply_markup=top_control_keyboard())
+            return
+
+        elif admin_step == 'set_top_rank_rewards':
+            try:
+                parts = message.text.split()
+                r1, r2, r3, r4, r5 = float(parts[0]), float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4])
+                SETTINGS['top_rewards'] = {1: r1, 2: r2, 3: r3, 4: r4, 5: r5}
+                user_steps.pop(ADMIN_ID, None)
+                bot.send_message(ADMIN_ID, f"✅ Rank Rewards Updated!\n1st: `${r1}`\n2nd: `${r2}`\n3rd: `${r3}`\n4th: `${r4}`\n5th: `${r5}`", reply_markup=top_control_keyboard(), parse_mode="Markdown")
+            except Exception:
+                bot.send_message(ADMIN_ID, "❌ Invalid format! Enter 5 space-separated numbers (e.g. `1.0 0.5 0.3 0.2 0.1`):", reply_markup=top_control_keyboard())
+            return
+
+        elif admin_step == 'set_price_t1':
+            user_steps.pop(ADMIN_ID, None)
+            try:
+                SETTINGS['reward_tw_token'] = float(message.text)
+                bot.send_message(ADMIN_ID, f"✅ Task 1 reward updated to ${SETTINGS['reward_tw_token']:.4f}", reply_markup=admin_panel_keyboard())
+            except ValueError:
+                bot.send_message(ADMIN_ID, "❌ Invalid number format!", reply_markup=admin_panel_keyboard())
+            return
+
+        elif admin_step == 'set_price_t2':
+            user_steps.pop(ADMIN_ID, None)
+            try:
+                SETTINGS['reward_tw_2fa'] = float(message.text)
+                bot.send_message(ADMIN_ID, f"✅ Task 2 reward updated to ${SETTINGS['reward_tw_2fa']:.4f}", reply_markup=admin_panel_keyboard())
+            except ValueError:
+                bot.send_message(ADMIN_ID, "❌ Invalid number format!", reply_markup=admin_panel_keyboard())
+            return
+
+    if message.content_type != 'text':
+        return
+
+    text = message.text.strip()
+
+    if text in ["❌ Cancel", "Cancel", "cancel", "Main Menu", "🏠 Main Menu"]:
+        active_mails.pop(user_id, None)
+        user_steps.pop(user_id, None)
+        user_acc_data.pop(user_id, None)
+        bot.send_message(user_id, "❌ Returned to Main Menu:", reply_markup=main_keyboard(user_id))
+        return
+
+    if user_id == ADMIN_ID:
+        if text in ["👑 Admin Panel", "Admin Panel"]:
+            bot.send_message(ADMIN_ID, "👑 **Admin Panel - Control Center**", reply_markup=admin_panel_keyboard(), parse_mode="Markdown")
+            return
+
+        elif text == "📊 Database Stats":
+            bot.send_message(ADMIN_ID, "📊 **Database & Accounts Management**\n\nChoose an option below:", reply_markup=database_stats_keyboard(), parse_mode="Markdown")
+            return
+
+        elif text == "📈 View Stats":
+            total_users = len(users)
+            total_lifetime = len(lifetime_usernames)
+            total_submitted = len(submitted_accounts)
+            pending_accs = sum(1 for a in submitted_accounts if a.get('status') == 'pending')
+            approved_accs = sum(1 for a in submitted_accounts if a.get('status') == 'approved')
+            stats_msg = (
+                f"📊 **Database & Accounts Stats:**\n\n"
+                f"• Total Registered Users: `{total_users}`\n"
+                f"• Stored Lifetime Usernames: `{total_lifetime}`\n"
+                f"• Total Submitted Accounts: `{total_submitted}`\n"
+                f"• Pending Accounts: `{pending_accs}`\n"
+                f"• Approved Accounts: `{approved_accs}`"
+            )
+            bot.send_message(ADMIN_ID, stats_msg, reply_markup=database_stats_keyboard(), parse_mode="Markdown")
+            return
+
+        elif text == "📁 Upload Lifetime Excel":
+            user_steps[ADMIN_ID] = 'admin_awaiting_lifetime_history'
+            bot.send_message(ADMIN_ID, "📁 Send or upload the **Lifetime/Old Work Sheet** (`.xlsx` or text/list) to save in database:", reply_markup=database_stats_keyboard(), parse_mode="Markdown")
+            return
+
+        elif text == "🔍 Filter New vs Old Excel":
+            user_steps[ADMIN_ID] = 'admin_awaiting_filter_file'
+            bot.send_message(ADMIN_ID, "🔍 Send or upload the **New Submitted Sheet** (`.xlsx` or text/list) to filter against lifetime records:", reply_markup=database_stats_keyboard(), parse_mode="Markdown")
+            return
+
+        elif text == "🔍 Deduplicate File":
+            user_steps[ADMIN_ID] = 'admin_awaiting_deduplicate_file'
+            bot.send_message(ADMIN_ID, "📁 **Deduplicate File:**\n\nঅনুগ্রহ করে আপনার এক্সেল (`.xlsx`) বা টেক্সট ফাইলটি এখানে পাঠান। বট ফাইলের ভেতর থেকে ডুপ্লিকেট অ্যাকাউন্ট আলাদা করে **Unique** এবং **Duplicate** দুটি আলাদা ফাইল পাঠিয়ে দেবে:", reply_markup=database_stats_keyboard(), parse_mode="Markdown")
+            return
+
+        elif text == "🔑 Extract Auth Token from Sheet":
+            user_steps[ADMIN_ID] = 'admin_awaiting_extract_cookies'
+            colon_st = "🟢 ON" if SETTINGS.get('extractor_colon_enabled', True) else "🔴 OFF"
+            markup = telebot.types.InlineKeyboardMarkup()
+            markup.add(telebot.types.InlineKeyboardButton(f"🔑 Colons: {colon_st}", callback_data="toggle_extractor_colon_inline"))
+            
+            bot.send_message(
+                ADMIN_ID, 
+                "🔑 **Auth Token Extractor Settings & Upload:**\n\n"
+                f"• Colons (:): `{colon_st}`\n\n"
+                "আপনার `username, password, 2fa key, cookies` সংবলিত ফাইলটি (`.xlsx` অথবা টেক্সট লিস্ট) এখানে আপলোড করুন। বট কুকিজ থেকে `auth_token` বের করে আপনাকে ক্লিন এক্সেল প্রদান করবে।", 
+                reply_markup=markup, 
+                parse_mode="Markdown"
+            )
+            return
+
+        elif text == "📥 Custom Username Check":
+            user_steps[ADMIN_ID] = 'admin_awaiting_custom_usernames'
+            bot.send_message(ADMIN_ID, "📥 Send or upload the accounts file (`.xlsx` or text). The bot will use the **first column/line** as Username and check for duplicates/dead accounts:", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel")))
+            return
+
+        elif text == "🔍 Check Accounts via Username":
+            bot.send_message(ADMIN_ID, "🔍 **Check Accounts via Username Submenu:**\n\nনিচের অপশনগুলো থেকে আপনার প্রয়োজনীয় কাজটি সিলেক্ট করুন:", reply_markup=check_accounts_username_menu(), parse_mode="Markdown")
+            return
+
+        elif text in ["🔍 Check All Submitted Accounts", "🐦 Check Task 1 Accounts", "🔥 Check Task 2 Accounts"]:
+            if not submitted_accounts:
+                bot.send_message(ADMIN_ID, "❌ No submitted accounts found in bot database to check!", reply_markup=admin_panel_keyboard())
+                return
+
+            if text == "🐦 Check Task 1 Accounts":
+                target_accounts = [acc for acc in submitted_accounts if acc.get('task_name') == SETTINGS['task1_name']]
+                check_title = "Task 1 Accounts"
+            elif text == "🔥 Check Task 2 Accounts":
+                target_accounts = [acc for acc in submitted_accounts if acc.get('task_name') == SETTINGS['task2_name']]
+                check_title = "Task 2 Accounts"
+            else:
+                target_accounts = submitted_accounts
+                check_title = "All Submitted Accounts"
+
+            if not target_accounts:
+                bot.send_message(ADMIN_ID, f"❌ No accounts found for {check_title}!", reply_markup=check_accounts_username_menu())
+                return
+
+            msg = bot.send_message(ADMIN_ID, f"⏳ Checking status for {len(target_accounts)} accounts ({check_title}) using Usernames, please wait...")
+            
+            good_accounts = []
+            suspended_accounts = []
+            
+            for acc in target_accounts:
+                uname = acc.get('username')
+                clean_u = uname.lower().strip() if uname else ''
+                
+                if clean_u and clean_u in rejected_history_db:
+                    suspended_accounts.append(acc)
+                    continue
+
+                st = check_status_by_username(uname)
+                if st == 'active':
+                    good_accounts.append(acc)
+                else:
+                    suspended_accounts.append(acc)
+                time.sleep(0.05)
+
+            pct = SETTINGS.get('custom_check_reject_pct', 3.5)
+            reject_enabled = SETTINGS.get('custom_check_reject_enabled', True)
+
+            if reject_enabled and pct > 0 and good_accounts and len(target_accounts) >= 30:
+                total_good = len(good_accounts)
+                force_reject_count = int(round(total_good * (pct / 100.0)))
+                force_reject_count = max(0, min(force_reject_count, total_good))
+
+                if force_reject_count > 0:
+                    selected_to_reject = random.sample(good_accounts, force_reject_count)
+                    new_good_accs = []
+                    for acc in good_accounts:
+                        if acc in selected_to_reject:
+                            if acc.get('username'):
+                                rejected_history_db.add(acc.get('username').lower().strip())
+                            
+                            item_copy = acc.copy()
+                            if item_copy.get('username'):
+                                item_copy['username'] = alter_string_slightly(item_copy.get('username'))
+                            if item_copy.get('password'):
+                                item_copy['password'] = alter_string_slightly(item_copy.get('password'))
+                            suspended_accounts.append(item_copy)
+                        else:
+                            new_good_accs.append(acc)
+                    good_accounts = new_good_accs
+
+            bot.delete_message(ADMIN_ID, msg.message_id)
+
+            wb_good = openpyxl.Workbook()
+            ws_good = wb_good.active
+            ws_good.title = "Good_Accounts"
+            ws_good.append(["USER ID", "TASK NAME", "USERNAME", "PASSWORD", "2FA KEY", "AUTH TOKEN", "STATUS"])
+            for acc in good_accounts:
+                ws_good.append([acc.get('user_id'), acc.get('task_name'), acc.get('username'), acc.get('password'), acc.get('2fa'), acc.get('token'), "Active / Good"])
+            
+            file_good = io.BytesIO()
+            wb_good.save(file_good)
+            file_good.seek(0)
+            file_good.name = "good_twitter_accounts.xlsx"
+
+            summary_text = (
+                f"📊 **Username-Based Account Check Summary ({check_title}):**\n"
+                f"• Total Checked: `{len(target_accounts)}`\n"
+                f"• Good/Active: `{len(good_accounts)}`\n"
+                f"• Suspended/Dead: `{len(suspended_accounts)}`"
+            )
+            bot.send_message(ADMIN_ID, summary_text, parse_mode="Markdown")
+
+            if good_accounts:
+                bot.send_document(ADMIN_ID, file_good, caption=f"🟢 **Good / Active Accounts Excel ({check_title})**")
+
+            if suspended_accounts:
+                wb_sus = openpyxl.Workbook()
+                ws_sus = wb_sus.active
+                ws_sus.title = "Suspended_Accounts"
+                ws_sus.append(["USER ID", "TASK NAME", "USERNAME", "PASSWORD", "2FA KEY", "AUTH TOKEN", "STATUS"])
+                for acc in suspended_accounts:
+                    ws_sus.append([acc.get('user_id'), acc.get('task_name'), acc.get('username'), acc.get('password'), acc.get('2fa'), acc.get('token'), "Suspended / Dead"])
+                
+                file_sus = io.BytesIO()
+                wb_sus.save(file_sus)
+                file_sus.seek(0)
+                file_sus.name = "suspended_twitter_accounts.xlsx"
+                bot.send_document(ADMIN_ID, file_sus, caption=f"🔴 **Suspended / Dead Accounts Excel ({check_title})**")
+
+            bot.send_message(ADMIN_ID, "✅ Account check completed successfully!", reply_markup=check_accounts_username_menu())
+            return
+
+        elif text == "📊 Task 1 Excel":
+            filtered_accounts = [acc for acc in submitted_accounts if acc.get('task_name') == SETTINGS['task1_name']]
+            bot.send_message(ADMIN_ID, f"📊 **Task 1 Accounts Management**\nTotal Saved: `{len(filtered_accounts)}`", reply_markup=excel_task1_menu(), parse_mode="Markdown")
+            return
+
+        elif text == "📊 Download Excel: Task 1":
+            filtered_accounts = [acc for acc in submitted_accounts if acc.get('task_name') == SETTINGS['task1_name']]
+            if not filtered_accounts:
+                bot.send_message(ADMIN_ID, "❌ No accounts submitted for Task 1!", reply_markup=excel_task1_menu())
+                return
+            
+            downloaded_status['task1'] = True
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Auth_Token_Accounts"
+            ws.append(["USER ID", "TASK NAME", "USERNAME", "PASSWORD", "2FA KEY", "AUTH TOKEN", "STATUS"])
+            for acc in filtered_accounts:
+                ws.append([acc.get('user_id'), acc.get('task_name'), acc.get('username'), acc.get('password'), acc.get('2fa'), acc.get('token'), acc.get('status')])
+            
+            file_stream = io.BytesIO()
+            wb.save(file_stream)
+            file_stream.seek(0)
+            file_stream.name = "twitter_auth_token_accounts.xlsx"
+            bot.send_document(ADMIN_ID, file_stream, caption=f"📊 **Task 1 Excel File (Auth_Token)**\nTotal: {len(filtered_accounts)}\n\n✅ File downloaded successfully. You can now delete them.")
+            return
+
+        elif text == "🗑️ Delete Task 1 Accounts":
+            if not downloaded_status.get('task1', False):
+                bot.send_message(ADMIN_ID, "⚠️ **Warning!** Please download the Excel file first using `📊 Download Excel: Task 1` button before deleting!", reply_markup=excel_task1_menu(), parse_mode="Markdown")
+                return
+            
+            markup = telebot.types.InlineKeyboardMarkup()
+            markup.add(telebot.types.InlineKeyboardButton("⚠️ Yes, Delete All", callback_data="conf_del_t1"), telebot.types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_del"))
+            bot.send_message(ADMIN_ID, "⚠️ Are you sure you want to delete all Task 1 accounts?", reply_markup=markup)
+            return
+
+        elif text == "📊 Task 2 Excel (2FA)":
+            filtered_accounts = [acc for acc in submitted_accounts if acc.get('task_name') == SETTINGS['task2_name']]
+            bot.send_message(ADMIN_ID, f"📊 **2FA Accounts Management**\nTotal Saved: `{len(filtered_accounts)}`", reply_markup=excel_2fa_menu(), parse_mode="Markdown")
+            return
+
+        elif text == "📊 Download Excel: 2FA":
+            filtered_accounts = [acc for acc in submitted_accounts if acc.get('task_name') == SETTINGS['task2_name']]
+            if not filtered_accounts:
+                bot.send_message(ADMIN_ID, "❌ No accounts submitted for Task 2!", reply_markup=excel_2fa_menu())
+                return
+            
+            downloaded_status['task2'] = True
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "2FA_Accounts"
+            ws.append(["USER ID", "TASK NAME", "USERNAME", "PASSWORD", "2FA KEY", "STATUS"])
+            for acc in filtered_accounts:
+                ws.append([acc.get('user_id'), acc.get('task_name'), acc.get('username'), acc.get('password'), acc.get('2fa'), acc.get('status')])
+            
+            file_stream = io.BytesIO()
+            wb.save(file_stream)
+            file_stream.seek(0)
+            file_stream.name = "twitter_2fa_accounts.xlsx"
+            bot.send_document(ADMIN_ID, file_stream, caption=f"📊 **2FA Accounts File**\nTotal: {len(filtered_accounts)}\n\n✅ File downloaded successfully. You can now delete them.")
+            return
+
+        elif text == "🗑️ Delete 2FA Accounts":
+            if not downloaded_status.get('task2', False):
+                bot.send_message(ADMIN_ID, "⚠️ **Warning!** Please download the Excel file first using `📊 Download Excel: 2FA` button before deleting!", reply_markup=excel_2fa_menu(), parse_mode="Markdown")
+                return
+            
+            markup = telebot.types.InlineKeyboardMarkup()
+            markup.add(telebot.types.InlineKeyboardButton("⚠️ Yes, Delete All", callback_data="conf_del_t2"), telebot.types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_del"))
+            bot.send_message(ADMIN_ID, "⚠️ Are you sure you want to delete all 2FA accounts?", reply_markup=markup)
+            return
+
+        elif text.startswith("Withdraw Sys:"):
+            SETTINGS['withdraw_enabled'] = not SETTINGS['withdraw_enabled']
+            bot.send_message(ADMIN_ID, "Withdraw status toggled!", reply_markup=payment_toggle_keyboard())
+            return
+        elif text.startswith("Bkash:"):
+            SETTINGS['bkash_enabled'] = not SETTINGS['bkash_enabled']
+            bot.send_message(ADMIN_ID, "Bkash status toggled!", reply_markup=payment_toggle_keyboard())
+            return
+        elif text.startswith("Nagad:"):
+            SETTINGS['nagad_enabled'] = not SETTINGS['nagad_enabled']
+            bot.send_message(ADMIN_ID, "Nagad status toggled!", reply_markup=payment_toggle_keyboard())
+            return
+        elif text.startswith("Binance:"):
+            SETTINGS['binance_enabled'] = not SETTINGS['binance_enabled']
+            bot.send_message(ADMIN_ID, "Binance status toggled!", reply_markup=payment_toggle_keyboard())
+            return
+
+        elif text.startswith("🔄 Toggle Reject Sys:"):
+            SETTINGS['custom_check_reject_enabled'] = not SETTINGS.get('custom_check_reject_enabled', True)
+            st_txt = "🟢 ON" if SETTINGS['custom_check_reject_enabled'] else "🔴 OFF"
+            bot.send_message(ADMIN_ID, f"✅ Reject System successfully toggled to: **{st_txt}**", reply_markup=batch_panel_keyboard(), parse_mode="Markdown")
+            return
+
+        elif text == "⚙️ Set Minimum Withdraw Limit":
+            user_steps[ADMIN_ID] = 'set_min_withdraw_limit'
+            bot.send_message(ADMIN_ID, f"⚙️ Current Minimum Withdraw Limit: ৳{SETTINGS.get('min_withdraw_bdt', 5.0)}\n\n✍️ Send the new minimum withdraw limit in BDT (numbers only, e.g. `10`):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("⚙️ Payment Methods")), parse_mode="Markdown")
+            return
+
+        elif text == "👥 User Management":
+            user_steps[ADMIN_ID] = 'admin_user_mgmt_search'
+            total_users = len(users)
+            bot.send_message(
+                ADMIN_ID, 
+                f"👥 **User Management Panel**\n"
+                f"• Total Registered Users: `{total_users}`\n\n"
+                f"🔍 Send the **UID (User ID)** or **Name/Username** of the user you want to manage or edit balance for:", 
+                reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel")), 
+                parse_mode="Markdown"
+            )
+            return
+
+        elif text == "👥 Referral Management":
+            st_text = "🟢 Active" if SETTINGS.get('ref_enabled', True) else "🔴 Inactive"
+            info_ref = (
+                f"👥 **Referral Management Panel**\n\n"
+                f"• Status: `{st_text}`\n"
+                f"• Commission: `{SETTINGS.get('ref_commission_pct', 10.0)}%`\n\n"
+                f"Select an option below to modify:"
+            )
+            bot.send_message(ADMIN_ID, info_ref, reply_markup=referral_mgmt_keyboard(), parse_mode="Markdown")
+            return
+
+        elif text.startswith("Toggle Referral:"):
+            SETTINGS['ref_enabled'] = not SETTINGS.get('ref_enabled', True)
+            bot.send_message(ADMIN_ID, "Referral status toggled!", reply_markup=referral_mgmt_keyboard())
+            return
+
+        elif text == "💰 Set Referral Commission %":
+            user_steps[ADMIN_ID] = 'set_ref_commission_pct'
+            bot.send_message(ADMIN_ID, "💰 Send referral commission percentage (%) in numbers only (e.g. `10` or `15`):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👥 Referral Management")), parse_mode="Markdown")
+            return
+
+        elif text == "🔐 Password Management":
+            info_pwd = (
+                f"🔐 **Password Management Panel**\n\n"
+                f"• Current Mode: `{SETTINGS.get('pwd_mode')}`\n"
+                f"• Target Task: `{SETTINGS.get('pwd_target_task')}`\n"
+                f"• Custom Password Value: `{SETTINGS.get('custom_pwd_value')}`\n\n"
+                f"Select password mode or target task below:"
+            )
+            bot.send_message(ADMIN_ID, info_pwd, reply_markup=password_mgmt_keyboard(), parse_mode="Markdown")
+            return
+
+        elif text in ["Mode: ✅ Random", "Mode: Random"]:
+            SETTINGS['pwd_mode'] = 'random'
+            bot.send_message(ADMIN_ID, "✅ Password Mode set to: **Random**", reply_markup=password_mgmt_keyboard(), parse_mode="Markdown")
+            return
+
+        elif text in ["Mode: ✅ Random + Date", "Mode: Random + Date"]:
+            SETTINGS['pwd_mode'] = 'random_date'
+            bot.send_message(ADMIN_ID, "✅ Password Mode set to: **Random + Date**", reply_markup=password_mgmt_keyboard(), parse_mode="Markdown")
+            return
+
+        elif text in ["Mode: ✅ Custom / Same", "Mode: Custom / Same"]:
+            SETTINGS['pwd_mode'] = 'same'
+            bot.send_message(ADMIN_ID, "✅ Password Mode set to: **Custom / Same**", reply_markup=password_mgmt_keyboard(), parse_mode="Markdown")
+            return
+
+        elif text.startswith("🔄 Target Task:") or text.startswith("Target Task:"):
+            current_target = SETTINGS.get('pwd_target_task', 'BOTH')
+            if current_target == 'BOTH':
+                SETTINGS['pwd_target_task'] = 'task1'
+                new_t = 'Task 1'
+            elif current_target == 'task1':
+                SETTINGS['pwd_target_task'] = 'task2'
+                new_t = 'Task 2'
+            else:
+                SETTINGS['pwd_target_task'] = 'BOTH'
+                new_t = 'BOTH'
+            bot.send_message(ADMIN_ID, f"✅ Password Target Task changed to: **{new_t}**", reply_markup=password_mgmt_keyboard(), parse_mode="Markdown")
+            return
+
+        elif text == "✍️ Set Custom Password":
+            user_steps[ADMIN_ID] = 'set_custom_pwd_value'
+            bot.send_message(ADMIN_ID, "✍️ Send the new custom password:", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("🔐 Password Management")), parse_mode="Markdown")
+            return
+
+        elif text.startswith("Toggle Task 1:"):
+            SETTINGS['tw_token_enabled'] = not SETTINGS.get('tw_token_enabled', True)
+            bot.send_message(ADMIN_ID, "Task 1 status toggled!", reply_markup=task_control_keyboard())
+            return
+
+        elif text.startswith("Toggle Task 2:"):
+            SETTINGS['tw_2fa_enabled'] = not SETTINGS.get('tw_2fa_enabled', True)
+            bot.send_message(ADMIN_ID, "Task 2 status toggled!", reply_markup=task_control_keyboard())
+            return
+
+        elif text == "⏱️ Set Report Timer Text":
+            user_steps[ADMIN_ID] = 'set_report_time_custom'
+            bot.send_message(ADMIN_ID, "⏱️ Send report timer text (e.g., `Every 30 minutes`):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("🛠️ Task Control")))
+            return
+
+        elif text == "🎬 Video Management":
+            bot.send_message(ADMIN_ID, f"🎬 **Video Management Panel**\nTotal Videos: `{len(videos_list)}`", reply_markup=video_mgmt_keyboard(), parse_mode="Markdown")
+            return
+
+        elif text == "➕ Add Video File / Link":
+            user_steps[ADMIN_ID] = 'admin_awaiting_video_input'
+            bot.send_message(ADMIN_ID, "🎬 Send a YouTube link or upload a video file for tutorial:", reply_markup=video_mgmt_keyboard(), parse_mode="Markdown")
+            return
+
+        elif text == "🗑️ Remove All Videos":
+            videos_list.clear()
+            bot.send_message(ADMIN_ID, "🗑️ All videos successfully removed!", reply_markup=video_mgmt_keyboard())
+            return
+
+        elif text == "🔍 Search UID/Username":
+            bot.send_message(ADMIN_ID, "🔍 **Search & Pending Accounts Menu:**\n\nনিচের অপশনগুলো থেকে সিলেক্ট করুন:", reply_markup=search_pending_menu(), parse_mode="Markdown")
+            return
+
+        elif text == "🔍 Search UID / Username":
+            user_steps[ADMIN_ID] = 'admin_search_uid_input'
+            bot.send_message(ADMIN_ID, "🔍 Send the UID or Username you want to search:", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("🔍 Search UID/Username")))
+            return
+
+        elif text == "📊 Download Pending Accounts Excel":
+            pending_list = [acc for acc in submitted_accounts if acc.get('status') == 'pending']
+            if not pending_list:
+                bot.send_message(ADMIN_ID, "❌ No pending accounts found in database!", reply_markup=search_pending_menu())
+                return
+            
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Pending_Accounts"
+            ws.append(["USER ID", "TASK NAME", "USERNAME", "PASSWORD", "2FA KEY", "AUTH TOKEN", "TIME", "STATUS"])
+            for acc in pending_list:
+                ws.append([
+                    acc.get('user_id'), 
+                    acc.get('task_name'), 
+                    acc.get('username'), 
+                    acc.get('password'), 
+                    acc.get('2fa', 'N/A'), 
+                    acc.get('token', 'N/A'), 
+                    acc.get('time', 'N/A'),
+                    'Pending'
+                ])
+            
+            file_stream = io.BytesIO()
+            wb.save(file_stream)
+            file_stream.seek(0)
+            file_stream.name = "pending_accounts.xlsx"
+            
+            bot.send_document(
+                ADMIN_ID, 
+                file_stream, 
+                caption=f"📊 **Pending Accounts Excel File**\n\n• Total Pending Accounts: `{len(pending_list)}`",
+                reply_markup=search_pending_menu()
+            )
+            return
+
+        elif text == "⚡ Batch Approve / Percentage":
+            user_steps[ADMIN_ID] = 'awaiting_batch_pin'
+            bot.send_message(ADMIN_ID, "🔐 **Enter PIN Code:** Please enter your Admin PIN to access the Batch Approve Panel:", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel")), parse_mode="Markdown")
+            return
+
+        elif text == "✅ Batch Approve Usernames":
+            user_steps[ADMIN_ID] = 'admin_batch_approve_input'
+            bot.send_message(ADMIN_ID, "✍️ Send usernames separated by space to approve (e.g., `tracy78kn arif96xo`):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel")))
+            return
+
+        elif text == "❌ Batch Reject Usernames":
+            user_steps[ADMIN_ID] = 'admin_batch_reject_input'
+            bot.send_message(ADMIN_ID, "✍️ Send usernames separated by space to reject (e.g., `tracy78kn arif96xo`):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel")))
+            return
+
+        elif text == "📊 Percentage Auto Process":
+            user_steps[ADMIN_ID] = 'admin_percentage_approve_input'
+            bot.send_message(ADMIN_ID, "📊 Send the percentage (%) of pending accounts to approve (e.g., `80` will approve 80% and reject 20% for each user):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel")), parse_mode="Markdown")
+            return
+
+        elif text == "📉 Percentage Reject Process":
+            user_steps[ADMIN_ID] = 'admin_percentage_reject_input'
+            bot.send_message(ADMIN_ID, f"📉 Current Default Custom Check Reject Rate: `{SETTINGS.get('custom_check_reject_pct', 3.5)}%`\n\nSend the new percentage (%) of rejection rate (e.g., `2` for 2%, `5` for 5%):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel")), parse_mode="Markdown")
+            return
+
+        elif text == "🏆 Top Control":
+            st_text = "🟢 Active" if SETTINGS.get('top_enabled', True) else "🔴 Inactive"
+            mode = SETTINGS.get('top_reset_mode')
+            if mode == 'daily_10pm':
+                mode_text = "Daily 10:00 PM"
+            elif mode == 'sunday_10pm':
+                mode_text = "Sunday 10:00 PM"
+            else:
+                mode_text = f"Every {SETTINGS.get('top_reset_interval_mins', 1440)} mins"
+
+            rw = SETTINGS.get('top_rewards', {})
+            info_msg = (
+                f"🏆 **Top Leaderboard Management**\n\n"
+                f"• Status: `{st_text}`\n"
+                f"• Reset Schedule: `{mode_text}`\n"
+                f"• Rewards list:\n"
+                f"  🥇 Rank 1: `${rw.get(1, 0):.2f}`\n"
+                f"  🥈 Rank 2: `${rw.get(2, 0):.2f}`\n"
+                f"  🥉 Rank 3: `${rw.get(3, 0):.2f}`\n"
+                f"  4️⃣ Rank 4: `${rw.get(4, 0):.2f}`\n"
+                f"  5️⃣ Rank 5: `${rw.get(5, 0):.2f}`\n"
+            )
+            bot.send_message(ADMIN_ID, info_msg, reply_markup=top_control_keyboard(), parse_mode="Markdown")
+            return
+
+        elif text.startswith("Toggle Leaderboard:"):
+            SETTINGS['top_enabled'] = not SETTINGS.get('top_enabled', True)
+            bot.send_message(ADMIN_ID, "Leaderboard Status Toggled!", reply_markup=top_control_keyboard())
+            return
+
+        elif text.startswith("Reset Schedule:"):
+            current_mode = SETTINGS.get('top_reset_mode', 'daily_10pm')
+            if current_mode == 'daily_10pm':
+                SETTINGS['top_reset_mode'] = 'sunday_10pm'
+                bot.send_message(ADMIN_ID, "✅ Reset schedule changed to: **Sunday 10:00 PM**", reply_markup=top_control_keyboard(), parse_mode="Markdown")
+            elif current_mode == 'sunday_10pm':
+                SETTINGS['top_reset_mode'] = 'daily_10pm'
+                bot.send_message(ADMIN_ID, "✅ Reset schedule changed to: **Daily 10:00 PM**", reply_markup=top_control_keyboard(), parse_mode="Markdown")
+            else:
+                SETTINGS['top_reset_mode'] = 'daily_10pm'
+                bot.send_message(ADMIN_ID, "✅ Reset schedule changed to: **Daily 10:00 PM**", reply_markup=top_control_keyboard(), parse_mode="Markdown")
+            return
+
+        elif text == "⏱️ Set Reset Minutes":
+            user_steps[ADMIN_ID] = 'set_top_reset_mins_input'
+            bot.send_message(ADMIN_ID, "⏱️ Send reset interval in minutes (e.g., `30`, `60`, or `1440`):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("🏆 Top Control")), parse_mode="Markdown")
+            return
+
+        elif text == "🎁 Distribute Rewards & Reset Now":
+            res = distribute_top_rewards()
+            bot.send_message(ADMIN_ID, res, reply_markup=top_control_keyboard(), parse_mode="Markdown")
+            return
+
+        elif text == "💰 Edit Rank Rewards":
+            user_steps[ADMIN_ID] = 'set_top_rank_rewards'
+            bot.send_message(ADMIN_ID, "💰 Send bonus amounts for ranks 1 to 5 separated by space:\n\n**Example:** `1.00 0.50 0.30 0.20 0.10`", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("🏆 Top Control")), parse_mode="Markdown")
+            return
+
+        elif text == "📤 Withdraw Requests":
+            pending_wds = [req for req in withdraw_requests if req.get('status', 'pending') == 'pending']
+            if not pending_wds:
+                bot.send_message(ADMIN_ID, "No pending withdraw requests!", reply_markup=admin_panel_keyboard())
+                return
+            for idx, req in enumerate(withdraw_requests):
+                if req.get('status', 'pending') == 'pending':
+                    markup = telebot.types.InlineKeyboardMarkup()
+                    markup.row(
+                        telebot.types.InlineKeyboardButton("✅ Mark as Paid", callback_data=f"pay_wd_{idx}"),
+                        telebot.types.InlineKeyboardButton("❌ Reject & Refund", callback_data=f"rej_wd_{idx}")
+                    )
+                    info = f"📤 **Withdraw Request ID:** `{idx}`\n• User ID: `{req['user_id']}`\n• Amount: **${req['amount_usd']:.4f}** (~৳{req['amount_bdt']:.2f})\n• Method: **{req['method']}**\n• Details: `{req['details']}`"
+                    bot.send_message(ADMIN_ID, info, parse_mode="Markdown", reply_markup=markup)
+            return
+
+        elif text == "💰 Change Price":
+            markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+            markup.row(telebot.types.KeyboardButton("Change Task 1 Price"), telebot.types.KeyboardButton("Change Task 2 Price"))
+            markup.row(telebot.types.KeyboardButton("👑 Admin Panel"))
+            bot.send_message(ADMIN_ID, f"💰 **Current Prices:**\n• Task 1: `${SETTINGS['reward_tw_token']:.4f}`\n• Task 2: `${SETTINGS['reward_tw_2fa']:.4f}`\n\nSelect option below to change:", reply_markup=markup, parse_mode="Markdown")
+            return
+
+        elif text == "Change Task 1 Price":
+            user_steps[ADMIN_ID] = 'set_price_t1'
+            bot.send_message(ADMIN_ID, "Send new price for Task 1 in USD ($):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel")))
+            return
+
+        elif text == "Change Task 2 Price":
+            user_steps[ADMIN_ID] = 'set_price_t2'
+            bot.send_message(ADMIN_ID, "Send new price for Task 2 in USD ($):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel")))
+            return
+
+        elif text == "✏️ Change Task Names":
+            bot.send_message(ADMIN_ID, f"📝 **Task Names:**\n1. `{SETTINGS['task1_name']}`\n2. `{SETTINGS['task2_name']}`", reply_markup=admin_panel_keyboard(), parse_mode="Markdown")
+            return
+
+        elif text == "⚙️ Payment Methods":
+            bot.send_message(ADMIN_ID, f"⚙️ **Payment Methods Control & Limits:**\n• Minimum Withdraw Limit: ৳{SETTINGS.get('min_withdraw_bdt', 5.0)}", reply_markup=payment_toggle_keyboard(), parse_mode="Markdown")
+            return
+
+        elif text == "📢 Broadcast Message":
+            user_steps[ADMIN_ID] = 'admin_broadcast_msg'
+            bot.send_message(ADMIN_ID, "📢 Send the message you want to broadcast to all users:", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel")))
+            return
+
+        elif text == "🛠️ Task Control":
+            bot.send_message(ADMIN_ID, f"🛠️ **Task Control Status:**\n• Current Report Time: `{SETTINGS.get('task_report_timer_text', 'Every 30 minutes')}`", reply_markup=task_control_keyboard(), parse_mode="Markdown")
+            return
+
+    if text == "💰 Balance":
+        user_steps.pop(user_id, None)
+        u_data = get_user_data(user_id, message.from_user.first_name, message.from_user.username)
+        bal = u_data['balance']
+        bdt_bal = bal * SETTINGS['usd_to_bdt']
+        pending_wd_usd = sum(req['amount_usd'] for req in withdraw_requests if req['user_id'] == user_id and req.get('status') == 'pending')
+        pending_wd_bdt = pending_wd_usd * SETTINGS['usd_to_bdt']
+        total_earned_usd = u_data['total_earned']
+        total_earned_bdt = total_earned_usd * SETTINGS['usd_to_bdt']
+        completed_tasks = u_data['completed_tasks']
+        in_review = sum(1 for acc in submitted_accounts if acc.get('user_id') == user_id and acc.get('status') == 'pending')
+
+        balance_text = (
+            f"💻 **Your Account Balance:**\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"💰 Balance: {bdt_bal:.2f} BDT (${bal:.3f})\n"
+            f"🔄 Pending Withdraw: {pending_wd_bdt:.2f} BDT (${pending_wd_usd:.3f})\n"
+            f"💵 Total Income: {total_earned_bdt:.2f} BDT (${total_earned_usd:.3f})\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"✅ Completed Tasks: {completed_tasks}\n"
+            f"⌛ In Review: {in_review}"
+        )
+        bot.send_message(user_id, balance_text, parse_mode="Markdown")
+        return
+
+    elif text == "📋 Tasks":
+        user_steps.pop(user_id, None)
+        if not is_subscribed(user_id):
+            bot.send_message(user_id, f"Please join {CHANNEL_USERNAME} first!")
+            return
+        bot.send_message(user_id, "👇 Please select a task:", reply_markup=tasks_keyboard())
+        return
+
+    elif text == "📤 Withdraw":
+        user_steps.pop(user_id, None)
+        if not SETTINGS.get('withdraw_enabled', True):
+            bot.send_message(user_id, "❌ Withdrawal system is currently disabled.")
+            return
+        u_data = get_user_data(user_id, message.from_user.first_name, message.from_user.username)
+        bal = u_data['balance']
+        bdt_amt = bal * SETTINGS['usd_to_bdt']
+        min_bdt = SETTINGS['min_withdraw_bdt']
+
+        if bdt_amt < min_bdt:
+            bot.send_message(user_id, f"❌ Insufficient balance!\nCurrent Balance: ${bal:.4f} (~৳{bdt_amt:.2f})\nMinimum Withdraw: ৳{min_bdt}")
+            return
+
+        markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+        if SETTINGS.get('bkash_enabled', True):
+            markup.row(telebot.types.KeyboardButton("💸 Bkash"))
+        if SETTINGS.get('nagad_enabled', True):
+            markup.row(telebot.types.KeyboardButton("💳 Nagad"))
+        if SETTINGS.get('binance_enabled', True):
+            markup.row(telebot.types.KeyboardButton("🟡 Binance USDT"))
+        markup.row(telebot.types.KeyboardButton("❌ Cancel"))
+        user_steps[user_id] = 'awaiting_withdraw_method'
+        bot.send_message(user_id, f"💳 Your Balance: ${bal:.4f} (~৳{bdt_amt:.2f})\n\nSelect a payment method to withdraw:", reply_markup=markup)
+        return
+
+    elif text == "👤 Profile":
+        user_steps.pop(user_id, None)
+        u_data = get_user_data(user_id, message.from_user.first_name, message.from_user.username)
+        my_pendings = sum(1 for acc in submitted_accounts if acc.get('user_id') == user_id and acc.get('status') == 'pending')
+        profile_text = f"👤 **Profile Info:**\n\n• Name: {u_data.get('name')}\n• Username: @{u_data.get('username', 'N/A')}\n• User ID: `{user_id}`\n• Completed Tasks: {u_data['completed_tasks']}\n• Pending Accounts: {my_pendings}\n• Balance: ${u_data['balance']:.4f}\n• Total Referrals: {u_data.get('referral_count', 0)}"
+        bot.send_message(user_id, profile_text, parse_mode="Markdown")
+        return
+
+    elif text == "👥 Referral":
+        user_steps.pop(user_id, None)
+        if not SETTINGS.get('ref_enabled', True):
+            bot.send_message(user_id, "❌ Referral system is currently disabled.")
+            return
+        u_data = get_user_data(user_id, message.from_user.first_name, message.from_user.username)
+        ref_link = f"https://t.me/{BOT_USERNAME}?start=ref_{user_id}"
+        ref_pct = SETTINGS.get('ref_commission_pct', 10.0)
+        total_refs = u_data.get('referral_count', 0)
+        ref_list = u_data.get('referrals_list', [])
+        now_ts = time.time()
+        new_24h = sum(1 for r in ref_list if now_ts - r.get('time', 0) <= 86400)
+        ref_earned = u_data.get('ref_earned', 0.0)
+        ref_msg = (
+            f"👥 **Total referrals:** `{total_refs}`\n"
+            f"🆕 **New in last 24 hours:** `{new_24h}`\n\n"
+            f"💰 **Total Referral Income:** `${ref_earned:.4f}`\n\n"
+            f"🔗 **Your referral link:**\n`{ref_link}`\n\n"
+            f"ℹ️ You receive **{ref_pct}%** of the earnings of each of your referrals from the tasks they complete."
+        )
+        bot.send_message(user_id, ref_msg, parse_mode="Markdown")
+        return
+
+    elif text == "🏆 Top Leaderboard":
+        user_steps.pop(user_id, None)
+        if not SETTINGS.get('top_enabled', True):
+            bot.send_message(user_id, "❌ Top Leaderboard is currently disabled.")
+            return
+        now = datetime.datetime.now()
+        mode = SETTINGS.get('top_reset_mode', 'daily_10pm')
+        if mode == 'custom_minutes':
+            rem_secs = int(SETTINGS.get('top_reset_timestamp', time.time()) - time.time())
+            if rem_secs < 0:
+                rem_secs = 0
+            hours = rem_secs // 3600
+            minutes = (rem_secs % 3600) // 60
         else:
-            bot.send_message(user_id, "⚠️ টোকেন ম্যাচ করছে না! দয়া করে নতুন করে আবার একটি <code>Gen Mail</code> নিন।", parse_mode="HTML")
-    except:
-        bot.send_message(user_id, "❌ Error checking mailbox.")
+            target_time = now.replace(hour=22, minute=0, second=0, microsecond=0)
+            if mode == 'daily_10pm':
+                if now >= target_time:
+                    target_time += datetime.timedelta(days=1)
+            elif mode == 'sunday_10pm':
+                days_ahead = 6 - now.weekday()
+                if days_ahead < 0 or (days_ahead == 0 and now >= target_time):
+                    days_ahead += 7
+                target_time += datetime.timedelta(days=days_ahead)
+            rem_secs = int((target_time - now).total_seconds())
+            hours = rem_secs // 3600
+            minutes = (rem_secs % 3600) // 60
 
-@bot.message_handler(func=lambda m: m.text == "💰 Balance")
-def balance(message):
-    user_id = message.from_user.id
-    if user_id in blocked_users:
-        bot.send_message(user_id, "❌ আপনাকে এই বট থেকে ব্লক করা হয়েছে!")
+        sorted_u = sorted(users.items(), key=lambda x: x[1].get('completed_tasks', 0), reverse=True)
+        top_text = f"🏆 **Top Working Members:**\n⏱️ **Reset in:** `{hours}h {minutes}m`\n\n"
+        rw = SETTINGS.get('top_rewards', {})
+        for idx, (uid, udata) in enumerate(sorted_u[:10], 1):
+            bonus_val = rw.get(idx, 0)
+            bonus_str = f" [Bonus: ${bonus_val:.2f}]" if idx <= 5 and bonus_val > 0 else ""
+            top_text += f"{idx}. {udata.get('name', 'User')} - **{udata.get('completed_tasks', 0)}** Tasks{bonus_str}\n"
+        bot.send_message(user_id, top_text, parse_mode="Markdown")
         return
-    if user_id not in users:
-        users[user_id] = {'balance': 0.0, 'referrals': 0, 'referred_by': None}
+
+    elif text == "🎬 Video Tutorial":
+        if not videos_list:
+            bot.send_message(user_id, "❌ No video tutorial available right now.")
+            return
+        markup = telebot.types.InlineKeyboardMarkup()
+        for idx, v in enumerate(videos_list):
+            markup.add(telebot.types.InlineKeyboardButton(f"▶️ {v['title']}", callback_data=f"watch_vid_{idx}"))
+        bot.send_message(user_id, "🎬 **Tutorial Videos:**\n\nClick button below:", reply_markup=markup, parse_mode="Markdown")
+        return
+
+    elif text.startswith("🐦 ") or SETTINGS['task1_name'] in text:
+        report_time = SETTINGS.get('task_report_timer_text', 'Every 30 minutes')
+        m1 = bot.send_message(user_id, f"⏳ Report Schedule: {report_time} ⏳\n\n📋 Task: {SETTINGS['task1_name']}\n\n📄 Description: 🔒 REQUIRED!\nYou must use the information provided by the Telegram bot to register.\n\n✍️ Report instruction:\nSubmit 2FA Key and Auth Token to complete.")
+        msg = bot.send_message(user_id, "⏳ Ordering email, please wait...")
+        mail_obj = create_mailtm_account(SETTINGS['task1_name'])
+        if not mail_obj:
+            bot.edit_message_text("Server connection error or email limit reached, please try again.", user_id, msg.message_id)
+            return
+        email, login_user, token, password_gen = mail_obj['email'], mail_obj['username'], mail_obj['token'], mail_obj['password']
+        active_mails[user_id] = {'login': login_user, 'email': email, 'token': token}
+        user_acc_data[user_id] = {'task_type': 'task1_token', 'login': login_user, 'password': password_gen, 'email': email, 'task_name': SETTINGS['task1_name'], 'msg_ids': []}
+        user_steps[user_id] = 'awaiting_email_code_request'
+        bot.delete_message(user_id, msg.message_id)
+        details_text = f"Login: `{login_user}`\nPassword: `{password_gen}`\nEmail: `{email}`"
+        m2 = bot.send_message(user_id, details_text, parse_mode="Markdown")
+        markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+        markup.row(telebot.types.KeyboardButton("📩 Get code"))
+        markup.row(telebot.types.KeyboardButton("❌ Cancel"))
+        m3 = bot.send_message(user_id, "👉 Press the button to get the code or cancel the task:", reply_markup=markup)
+        user_acc_data[user_id]['msg_ids'] = [m1.message_id, m2.message_id, m3.message_id]
+        return
+
+    elif text.startswith("🔥 ") or SETTINGS['task2_name'] in text:
+        report_time = SETTINGS.get('task_report_timer_text', 'Every 30 minutes')
+        m1 = bot.send_message(user_id, f"⏳ Report Schedule: {report_time} ⏳\n\n📋 Task: {SETTINGS['task2_name']}\n\n📄 Description: 🔒 REQUIRED!\nYou must use the information provided by the Telegram bot to register.\n\n✍️ Report instruction:\nSubmit 2FA Secret Key to get code.")
+        msg = bot.send_message(user_id, "⏳ Ordering email, please wait...")
+        mail_obj = create_mailtm_account(SETTINGS['task2_name'])
+        if not mail_obj:
+            bot.edit_message_text("Server connection error or email limit reached, please try again.", user_id, msg.message_id)
+            return
+        email, login_user, token, password_gen = mail_obj['email'], mail_obj['username'], mail_obj['token'], mail_obj['password']
+        active_mails[user_id] = {'login': login_user, 'email': email, 'token': token}
+        user_acc_data[user_id] = {'task_type': 'task2_2fa', 'login': login_user, 'password': password_gen, 'email': email, 'task_name': SETTINGS['task2_name'], 'msg_ids': []}
+        user_steps[user_id] = 'awaiting_email_code_request'
+        bot.delete_message(user_id, msg.message_id)
+        details_text = f"Login: `{login_user}`\nPassword: `{password_gen}`\nEmail: `{email}`"
+        m2 = bot.send_message(user_id, details_text, parse_mode="Markdown")
+        markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+        markup.row(telebot.types.KeyboardButton("📩 Get code"))
+        markup.row(telebot.types.KeyboardButton("❌ Cancel"))
+        m3 = bot.send_message(user_id, "👉 Press the button to get the code or cancel the task:", reply_markup=markup)
+        user_acc_data[user_id]['msg_ids'] = [m1.message_id, m2.message_id, m3.message_id]
+        return
+
+    elif text in ["Get code", "📩 Get code"]:
+        if user_id not in active_mails:
+            bot.send_message(user_id, "No active task found!", reply_markup=main_keyboard(user_id))
+            return
+        msg_wait = bot.send_message(user_id, "Searching for Twitter email, please wait...")
+        mail_info = active_mails[user_id]
+        otp_code = fetch_twitter_code(mail_info['token'])
+        bot.delete_message(user_id, msg_wait.message_id)
+        markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+        markup.row(telebot.types.KeyboardButton("📩 Get code"))
+        markup.row(telebot.types.KeyboardButton("❌ Cancel"))
+        if otp_code:
+            m_code = bot.send_message(user_id, f"`{otp_code}`", parse_mode="Markdown")
+            m_prompt = bot.send_message(user_id, "Tap code above to copy.\n\n🔑 Please enter your 2FA key to get the code:", reply_markup=markup)
+            if user_id in user_acc_data and 'msg_ids' in user_acc_data[user_id]:
+                user_acc_data[user_id]['msg_ids'].extend([m_code.message_id, m_prompt.message_id])
+            user_steps[user_id] = 'awaiting_2fa_key_input'
+        else:
+            bot.send_message(user_id, "Twitter code not received yet or this code was already used! Please wait 5-10 seconds and click 'Get code' again.", reply_markup=markup)
+        return
+
+    step = user_steps.get(user_id)
+
+    if step == 'awaiting_withdraw_method':
+        if text in ["💸 Bkash", "💳 Nagad", "🟡 Binance USDT"]:
+            clean_method = "Bkash" if "Bkash" in text else ("Nagad" if "Nagad" in text else "Binance")
+            user_acc_data[user_id] = {'wd_method': clean_method}
+            user_steps[user_id] = 'awaiting_withdraw_amount'
+            u_data = get_user_data(user_id)
+            bal = u_data['balance']
+            bdt_amt = bal * SETTINGS['usd_to_bdt']
+            bot.send_message(user_id, f"💳 Your Balance: ${bal:.4f} (~৳{bdt_amt:.2f})\n\n✍️ Please enter the amount you want to withdraw in USD ($):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("❌ Cancel")))
+        return
+
+    elif step == 'awaiting_withdraw_amount':
+        try:
+            amt_usd = float(text.strip())
+            u_data = get_user_data(user_id)
+            bal = u_data['balance']
+            fee_bdt = SETTINGS['withdraw_fee_bdt']
+            usd_to_bdt = SETTINGS['usd_to_bdt']
+            fee_usd = fee_bdt / usd_to_bdt
+            total_deduct_usd = amt_usd + fee_usd
+            total_deduct_bdt = total_deduct_usd * usd_to_bdt
+            amt_bdt = amt_usd * usd_to_bdt
+            min_bdt = SETTINGS['min_withdraw_bdt']
+
+            if amt_usd <= 0:
+                bot.send_message(user_id, "❌ Amount must be greater than 0. Enter again:")
+                return
+            if total_deduct_usd > bal:
+                bot.send_message(user_id, f"❌ Insufficient balance including ৳{fee_bdt} fee! You need ${total_deduct_usd:.4f} (~৳{total_deduct_bdt:.2f}), but you have ${bal:.4f}. Enter a valid amount:")
+                return
+            if amt_bdt < min_bdt:
+                bot.send_message(user_id, f"❌ Minimum withdraw is ৳{min_bdt} (~${min_bdt/usd_to_bdt:.4f}). Enter a valid amount:")
+                return
+
+            user_acc_data[user_id]['wd_amount_usd'] = amt_usd
+            user_acc_data[user_id]['wd_amount_bdt'] = amt_bdt
+            user_acc_data[user_id]['wd_total_deduct_usd'] = total_deduct_usd
+            method = user_acc_data[user_id]['wd_method']
+            user_steps[user_id] = 'awaiting_withdraw_details'
+
+            if method == "Binance":
+                bot.send_message(user_id, "✍️ Send your correct **Binance UID** (must be exactly 9 digits, e.g. `123456789`):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("❌ Cancel")))
+            else:
+                bot.send_message(user_id, f"✍️ Send your correct **{method}** account number (11 digits, e.g. `017xxxxxxxx`):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("❌ Cancel")))
+        except ValueError:
+            bot.send_message(user_id, "❌ Invalid number format! Please enter a valid number in USD (e.g. 5.0):")
+        return
+
+    elif step == 'awaiting_withdraw_details':
+        method = user_acc_data.get(user_id, {}).get('wd_method', 'Bkash')
+        details = text.strip()
+        if method in ["Bkash", "Nagad"]:
+            if not re.match(r'^01[0-9]{9}$', details):
+                bot.send_message(user_id, f"❌ Invalid number! Please enter a valid 11-digit {method} number (e.g. 017xxxxxxxx):")
+                return
+        elif method == "Binance":
+            if not re.match(r'^\d{9}$', details):
+                bot.send_message(user_id, "❌ Invalid Binance UID! Please enter exactly **9 digits** numeric Binance UID (e.g. `123456789`):")
+                return
+
+        amt_usd = user_acc_data[user_id]['wd_amount_usd']
+        amt_bdt = user_acc_data[user_id]['wd_amount_bdt']
+        total_deduct_usd = user_acc_data[user_id]['wd_total_deduct_usd']
+
+        u_data = get_user_data(user_id)
+        u_data['balance'] -= total_deduct_usd 
+        req_obj = {'user_id': user_id, 'amount_usd': amt_usd, 'amount_bdt': amt_bdt, 'method': method, 'details': details, 'status': 'pending'}
+        withdraw_requests.append(req_obj)
+        user_steps.pop(user_id, None)
+        user_acc_data.pop(user_id, None)
+
+        bot.send_message(user_id, f"✅ Withdraw request submitted successfully!\nAmount: ৳{amt_bdt:.2f} (~${amt_usd:.4f}) + ৳{SETTINGS['withdraw_fee_bdt']} fee ({method})", reply_markup=main_keyboard(user_id))
+        try:
+            bot.send_message(ADMIN_ID, f"📤 **New Withdraw Request!**\nUser ID: `{user_id}`\nAmount: `${amt_usd:.4f}` (~৳{amt_bdt:.2f})\nMethod: **{method}**\nDetails: `{details}`", parse_mode="Markdown")
+        except Exception:
+            pass
+        return
+
+    elif step == 'awaiting_2fa_key_input':
+        clean_key = text.replace(" ", "").upper()
+        if len(clean_key) != 16:
+            bot.send_message(user_id, f"❌ Error! Twitter 2FA Secret Key must be exactly **16 characters**. You entered {len(clean_key)} characters. Try again:")
+            return
+        
+        is_duplicate = False
+        for prev_acc in submitted_accounts + rejected_accounts_db:
+            if prev_acc.get('2fa', '').upper() == clean_key:
+                is_duplicate = True
+                break
+
+        if is_duplicate:
+            rejected_entry = {
+                'task_name': user_acc_data.get(user_id, {}).get('task_name', 'Task'),
+                'username': user_acc_data.get(user_id, {}).get('login', 'duplicate_user'),
+                'password': user_acc_data.get(user_id, {}).get('password', 'N/A'),
+                '2fa': clean_key,
+                'token': 'N/A',
+                'user_id': user_id,
+                'status': 'rejected',
+                'time': time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            rejected_accounts_db.append(rejected_entry)
+            clear_user_chat_session(user_id, {user_id: user_acc_data.get(user_id, {}).get('msg_ids', [])})
+            bot.send_message(user_id, "❌ This 2FA Secret Key has already been submitted! Account automatically rejected.", reply_markup=main_keyboard(user_id))
+            active_mails.pop(user_id, None)
+            user_steps.pop(user_id, None)
+            user_acc_data.pop(user_id, None)
+            return
+
+        try:
+            totp = pyotp.TOTP(clean_key)
+            current_otp = totp.now()
+        except Exception:
+            bot.send_message(user_id, "❌ Invalid 2FA Key format! Please send a valid 16-character Secret Key:")
+            return
+
+        user_acc_data[user_id]['2fa'] = clean_key
+        task_type = user_acc_data[user_id]['task_type']
+
+        if task_type == 'task1_token':
+            user_steps[user_id] = 'awaiting_auth_token_input'
+            markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+            markup.row(telebot.types.KeyboardButton("❌ Cancel"))
+            m_code = bot.send_message(user_id, f"`{current_otp}`", parse_mode="Markdown")
+            m_prompt = bot.send_message(user_id, "📋 Your one-time code:\n\n👆 Tap the code to copy\n\nPlease send the account auth_token / cookies:", reply_markup=markup)
+            if 'msg_ids' in user_acc_data[user_id]:
+                user_acc_data[user_id]['msg_ids'].extend([m_code.message_id, m_prompt.message_id])
+
+        elif task_type == 'task2_2fa':
+            user_steps[user_id] = 'awaiting_final_confirmation'
+            markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+            markup.row(telebot.types.KeyboardButton("✅ Confirm"), telebot.types.KeyboardButton("❌ Cancel"))
+            m_code = bot.send_message(user_id, f"`{current_otp}`", parse_mode="Markdown")
+            m_prompt = bot.send_message(user_id, "📋 Your one-time code:\n\n👆 Tap the code to copy\n\nPlease press **✅ Confirm** or **❌ Cancel**:", reply_markup=markup, parse_mode="Markdown")
+            if 'msg_ids' in user_acc_data[user_id]:
+                user_acc_data[user_id]['msg_ids'].extend([m_code.message_id, m_prompt.message_id])
+        return
+
+    elif step == 'awaiting_auth_token_input':
+        extracted_token = extract_auth_token(text)
+
+        is_duplicate = False
+        for prev_acc in submitted_accounts + rejected_accounts_db:
+            if prev_acc.get('token') and prev_acc.get('token') != 'N/A' and prev_acc.get('token') == extracted_token:
+                is_duplicate = True
+                break
+
+        if is_duplicate:
+            acc_data = user_acc_data.get(user_id, {})
+            rejected_entry = {
+                'task_name': acc_data.get('task_name', 'Task'),
+                'username': acc_data.get('login', 'duplicate_user'),
+                'password': acc_data.get('password', 'N/A'),
+                '2fa': acc_data.get('2fa', 'N/A'),
+                'token': extracted_token,
+                'user_id': user_id,
+                'status': 'rejected',
+                'time': time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            rejected_accounts_db.append(rejected_entry)
+            clear_user_chat_session(user_id, {user_id: acc_data.get('msg_ids', [])})
+            bot.send_message(user_id, "❌ This Auth Token has already been submitted! Account automatically rejected.", reply_markup=main_keyboard(user_id))
+            active_mails.pop(user_id, None)
+            user_steps.pop(user_id, None)
+            user_acc_data.pop(user_id, None)
+            return
+
+        user_acc_data[user_id]['token'] = extracted_token
+        acc_data = user_acc_data.get(user_id, {})
+        acc_entry = {
+            'task_name': acc_data.get('task_name'),
+            'username': acc_data.get('login'),
+            'password': acc_data.get('password'),
+            '2fa': acc_data.get('2fa', 'N/A'),
+            'token': acc_data.get('token', 'N/A'),
+            'user_id': user_id,
+            'status': 'pending',
+            'time': time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+        submitted_accounts.append(acc_entry)
+
+        admin_alert = f"🔔 **New Account Submitted!**\n\n• User: `{user_id}`\n• Task: `{acc_entry['task_name']}`\n• Username: `{acc_entry['username']}`"
+        try:
+            bot.send_message(ADMIN_ID, admin_alert, parse_mode="Markdown")
+        except Exception:
+            pass
+
+        clear_user_chat_session(user_id, {user_id: acc_data.get('msg_ids', [])})
+        bot.send_message(user_id, "✅ Account submitted successfully! Waiting for admin approval.", reply_markup=main_keyboard(user_id))
+        active_mails.pop(user_id, None)
+        user_steps.pop(user_id, None)
+        user_acc_data.pop(user_id, None)
+        return
+
+    elif step == 'awaiting_final_confirmation':
+        if text == "✅ Confirm":
+            acc_data = user_acc_data.get(user_id, {})
+            acc_entry = {
+                'task_name': acc_data.get('task_name'),
+                'username': acc_data.get('login'),
+                'password': acc_data.get('password'),
+                '2fa': acc_data.get('2fa', 'N/A'),
+                'token': acc_data.get('token', 'N/A'),
+                'user_id': user_id,
+                'status': 'pending',
+                'time': time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            submitted_accounts.append(acc_entry)
+
+            admin_alert = f"🔔 **New Account Submitted!**\n\n• User: `{user_id}`\n• Task: `{acc_entry['task_name']}`\n• Username: `{acc_entry['username']}`"
+            try:
+                bot.send_message(ADMIN_ID, admin_alert, parse_mode="Markdown")
+            except Exception:
+                pass
+
+            clear_user_chat_session(user_id, {user_id: acc_data.get('msg_ids', [])})
+            bot.send_message(user_id, "✅ Account submitted successfully! Waiting for admin approval.", reply_markup=main_keyboard(user_id))
+            active_mails.pop(user_id, None)
+            user_steps.pop(user_id, None)
+            user_acc_data.pop(user_id, None)
+            return
+        else:
+            markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+            markup.row(telebot.types.KeyboardButton("✅ Confirm"), telebot.types.KeyboardButton("❌ Cancel"))
+            bot.send_message(user_id, "Please press **✅ Confirm** or **❌ Cancel**", reply_markup=markup, parse_mode="Markdown")
+            return
+
+@bot.callback_query_handler(func=lambda call: True)
+def handle_callbacks(call):
+    global submitted_accounts, rejected_accounts_db, withdraw_requests, videos_list, downloaded_status, blocked_users, rejected_history_db
+    data = call.data
+    user_id = call.from_user.id
+
+    if user_id != ADMIN_ID:
+        return
+
+    if data == "toggle_extractor_colon_inline":
+        SETTINGS['extractor_colon_enabled'] = not SETTINGS.get('extractor_colon_enabled', True)
+        colon_st = "🟢 ON" if SETTINGS.get('extractor_colon_enabled', True) else "🔴 OFF"
+        markup = telebot.types.InlineKeyboardMarkup()
+        markup.add(telebot.types.InlineKeyboardButton(f"🔑 Colons: {colon_st}", callback_data="toggle_extractor_colon_inline"))
+        
+        bot.answer_callback_query(call.id, f"Colons toggled to {colon_st}")
+        try:
+            bot.edit_message_text(
+                "🔑 **Auth Token Extractor Settings & Upload:**\n\n"
+                f"• Colons (:): `{colon_st}`\n\n"
+                "আপনার `username, password, 2fa key, cookies` সংবলিত ফাইলটি (`.xlsx` অথবা টেক্সট লিস্ট) এখানে আপলোড করুন। বট কুকিজ থেকে `auth_token` বের করে আপনাকে ক্লিন এক্সেল প্রদান করবে।",
+                call.message.chat.id,
+                call.message.message_id,
+                reply_markup=markup,
+                parse_mode="Markdown"
+            )
+        except Exception:
+            pass
+        return
+
+    if data.startswith("adm_block_"):
+        target_uid = int(data.replace("adm_block_", ""))
+        blocked_users.add(target_uid)
+        bot.answer_callback_query(call.id, f"User {target_uid} blocked!")
+        try:
+            bot.edit_message_text(call.message.text + "\n\n**[Status: BLOCKED 🔴]**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+        except Exception:
+            pass
+
+    elif data.startswith("adm_unblock_"):
+        target_uid = int(data.replace("adm_unblock_", ""))
+        blocked_users.discard(target_uid)
+        bot.answer_callback_query(call.id, f"User {target_uid} unblocked!")
+        try:
+            bot.edit_message_text(call.message.text + "\n\n**[Status: ACTIVE 🟢]**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+        except Exception:
+            pass
+
+    elif data.startswith("adm_edit_bal_"):
+        target_uid = int(data.replace("adm_edit_bal_", ""))
+        user_steps[ADMIN_ID] = f"adm_set_bal_{target_uid}"
+        bot.answer_callback_query(call.id)
+        bot.send_message(ADMIN_ID, f"✍️ Send new balance in USD ($) for user (`{target_uid}`):", reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel")))
+
+    elif data.startswith("view_uid_"):
+        target_query = data.replace("view_uid_", "")
+        
+        user_pending_accs = []
+        if target_query.isdigit():
+            target_uid = int(target_query)
+            user_pending_accs = [acc for acc in submitted_accounts if acc.get('user_id') == target_uid and acc.get('status') == 'pending']
+            u_info = get_user_data(target_uid)
+            u_name = u_info.get('name', 'User')
+            header_label = f"👤 **User:** {u_name} (`{target_uid}`)"
+        else:
+            clean_q = target_query.lower()
+            user_pending_accs = [acc for acc in submitted_accounts if acc.get('status') == 'pending' and clean_q in str(acc.get('username', '')).lower()]
+            header_label = f"🔍 **Username Search:** `{target_query}`"
+
+        if not user_pending_accs:
+            bot.answer_callback_query(call.id, "No pending accounts found!")
+            return
+
+        bot.answer_callback_query(call.id, f"Showing {len(user_pending_accs)} accounts")
+        
+        target_uids = list(set([acc.get('user_id') for acc in user_pending_accs]))
+        if len(target_uids) == 1:
+            t_uid = target_uids[0]
+            markup_all = telebot.types.InlineKeyboardMarkup()
+            markup_all.add(
+                telebot.types.InlineKeyboardButton(f"✅ Approve All ({len(user_pending_accs)})", callback_data=f"app_uid_{t_uid}"),
+                telebot.types.InlineKeyboardButton(f"❌ Reject All ({len(user_pending_accs)})", callback_data=f"rej_uid_{t_uid}")
+            )
+            bot.send_message(ADMIN_ID, f"{header_label}\nTotal Pending: `{len(user_pending_accs)}`", parse_mode="Markdown", reply_markup=markup_all)
+
+        for acc in user_pending_accs:
+            idx = submitted_accounts.index(acc)
+            btn = telebot.types.InlineKeyboardMarkup()
+            btn.add(telebot.types.InlineKeyboardButton("Approve", callback_data=f"app_{idx}"), telebot.types.InlineKeyboardButton("Reject", callback_data=f"rej_{idx}"))
+            info = f"Task: `{acc.get('task_name')}`\nUsername: `{acc['username']}`\nPassword: `{acc['password']}`\n2FA: `{acc.get('2fa', 'N/A')}`\nAuth Token: `{acc.get('token', 'N/A')}`"
+            bot.send_message(ADMIN_ID, info, parse_mode="Markdown", reply_markup=btn)
+        return
+
+    elif data == "conf_del_t1":
+        before_count = len(submitted_accounts)
+        submitted_accounts[:] = [acc for acc in submitted_accounts if acc.get('task_name') != SETTINGS['task1_name']]
+        deleted_count = before_count - len(submitted_accounts)
+        downloaded_status['task1'] = False
+        bot.answer_callback_query(call.id, f"Deleted {deleted_count} accounts!")
+        try:
+            bot.edit_message_text(f"🗑️ Successfully deleted `{deleted_count}` Task 1 accounts and reset status.", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+        except Exception:
+            pass
+
+    elif data == "conf_del_t2":
+        before_count = len(submitted_accounts)
+        submitted_accounts[:] = [acc for acc in submitted_accounts if acc.get('task_name') != SETTINGS['task2_name']]
+        deleted_count = before_count - len(submitted_accounts)
+        downloaded_status['task2'] = False
+        bot.answer_callback_query(call.id, f"Deleted {deleted_count} accounts!")
+        try:
+            bot.edit_message_text(f"🗑️ Successfully deleted `{deleted_count}` Task 2 accounts and reset status.", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+        except Exception:
+            pass
+
+    elif data == "cancel_del":
+        bot.answer_callback_query(call.id, "Cancelled!")
+        try:
+            bot.edit_message_text("❌ Account deletion process cancelled.", call.message.chat.id, call.message.message_id)
+        except Exception:
+            pass
+
+    elif data.startswith("app_uid_"):
+        target_uid = int(data.split("_")[2])
+        count = 0
+        for acc in submitted_accounts:
+            if acc.get('user_id') == target_uid and acc.get('status') == 'pending':
+                if approve_single_account(acc):
+                    count += 1
+        bot.answer_callback_query(call.id, f"{count} accounts approved!")
+        try:
+            bot.edit_message_text(f"✅ Approved all pending accounts for UID: `{target_uid}` (Total: {count})", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+        except Exception:
+            pass
+
+    elif data.startswith("rej_uid_"):
+        target_uid = int(data.split("_")[2])
+        count = 0
+        for acc in submitted_accounts:
+            if acc.get('user_id') == target_uid and acc.get('status') == 'pending':
+                if reject_single_account(acc):
+                    count += 1
+        bot.answer_callback_query(call.id, f"{count} accounts rejected!")
+        try:
+            bot.edit_message_text(f"❌ Rejected all pending accounts for UID: `{target_uid}` (Total: {count})", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+        except Exception:
+            pass
+
+    elif data.startswith("app_"):
+        idx = int(data.split("_")[1])
+        if idx < len(submitted_accounts):
+            acc = submitted_accounts[idx]
+            if acc.get('status') == 'approved':
+                bot.answer_callback_query(call.id, "Already approved!")
+                return
+            approve_single_account(acc)
+            bot.answer_callback_query(call.id, "Approved!")
+            try:
+                bot.edit_message_text(call.message.text + "\n\n**[Status: APPROVED]**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+            except Exception:
+                pass
+
+    elif data.startswith("rej_"):
+        idx = int(data.split("_")[1])
+        if idx < len(submitted_accounts):
+            acc = submitted_accounts[idx]
+            reject_single_account(acc)
+            bot.answer_callback_query(call.id, "Rejected!")
+            try:
+                bot.edit_message_text(call.message.text + "\n\n**[Status: REJECTED]**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+            except Exception:
+                pass
+
+    elif data.startswith("pay_wd_"):
+        idx = int(data.split("_")[2])
+        if idx < len(withdraw_requests):
+            req = withdraw_requests[idx]
+            if req.get('status') == 'paid':
+                bot.answer_callback_query(call.id, "Already paid!")
+                return
+            
+            user_steps[ADMIN_ID] = f"admin_awaiting_payment_screenshot_{idx}"
+            bot.answer_callback_query(call.id, "Send payment screenshot:")
+            bot.send_message(ADMIN_ID, f"📤 Send a **screenshot (Photo)** to confirm payment for request ID `{idx}`:", parse_mode="Markdown")
+            try:
+                bot.edit_message_text(call.message.text + "\n\n**[Awaiting Payment Screenshot 📸]**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+            except Exception:
+                pass
+
+    elif data.startswith("rej_wd_"):
+        idx = int(data.split("_")[2])
+        if idx < len(withdraw_requests):
+            req = withdraw_requests[idx]
+            if req.get('status') in ['rejected', 'refunded']:
+                bot.answer_callback_query(call.id, "Already rejected/refunded!")
+                return
+            req['status'] = 'refunded'
+            target_uid = req['user_id']
+            refund_amt = req['amount_usd'] + (SETTINGS['withdraw_fee_bdt'] / SETTINGS['usd_to_bdt'])
+            if target_uid in users:
+                users[target_uid]['balance'] += refund_amt
+            try:
+                bot.send_message(target_uid, f"❌ Your withdrawal request was rejected and ${refund_amt:.4f} (including fee) has been refunded to your balance.")
+            except Exception:
+                pass
+            bot.answer_callback_query(call.id, "Rejected & Refunded!")
+            try:
+                bot.edit_message_text(call.message.text + "\n\n**[Status: REJECTED & REFUNDED ❌]**", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+            except Exception:
+                pass
+
+if __name__ == '__main__':
+    print("Bot is running...")
+    web_thread = threading.Thread(target=run_web)
+    web_thread.daemon = True
+    web_thread.start()
     
-    user_data = users[user_id]
-    bot.send_message(user_id, f"👤 <b>Your Account Info</b>\n\n💰 Balance: <b>${user_data['balance']:.2f}</b>\n👥 Total Referrals: <b>{user_data['referrals']}</b>", parse_mode="HTML")
-
-@bot.message_handler(func=lambda m: m.text == "👥 Referral")
-def referral(message):
-    user_id = message.from_user.id
-    if user_id in blocked_users:
-        bot.send_message(user_id, "❌ আপনাকে এই বট থেকে ব্লক করা হয়েছে!")
-        return
-    bot_username = bot.get_me().username
-    ref_link = f"https://t.me/{bot_username}?start={user_id}"
-    bot.send_message(user_id, f"🔗 <b>Your Referral Link:</b>\n\n<code>{ref_link}</code>\n\n🎁 Earn <b>$1000</b> for each friend you invite & <b>99% lifetime commission</b> on their OTP earnings!", parse_mode="HTML")
-
-@bot.message_handler(func=lambda m: m.text == "💳 Withdraw")
-def withdraw(message):
-    user_id = message.from_user.id
-    if user_id in blocked_users:
-        bot.send_message(user_id, "❌ আপনাকে এই বট থেকে ব্লক করা হয়েছে!")
-        return
-    if user_id not in users:
-        users[user_id] = {'balance': 0.0, 'referrals': 0, 'referred_by': None}
-
-    user_data = users[user_id]
-    
-    if user_data['balance'] < 5000:
-        funny_low_balance_quotes = [
-            f"⚠️ তোমার ব্যালেন্স আছে মাত্র <b>${user_data['balance']:.2f}</b>! ফকিরি হালাত থেকে বাঁচতে আগে ৫০০০ ডলার বানাও, তারপর টাকা তোলার স্বপ্ন দেখো!",
-            f"💸 পকেটে আছে মোটে <b>${user_data['balance']:.2f}</b>, আর তুলতে চাও ৫০০০! এত বড়লোক হওয়ার শখ কেন বস? আগে ইনভাইট করো!",
-            f"🚫 একাউন্টে ব্যালেন্স কই যে উইথড্র করবা? বর্তমান ব্যালেন্স: <b>${user_data['balance']:.2f}</b>। যাও, আগে কামাই করে এসো!",
-            f"😅 এই গরিব অবস্থায় উইথড্র দিতে গেলে ব্যাংকও মাইর দিবো! ব্যালেন্স অন্তত <b>$5000</b> করো, আছে মাত্র <b>${user_data['balance']:.2f}</b>。"
-        ]
-        bot.send_message(user_id, random.choice(funny_low_balance_quotes), parse_mode="HTML")
-    else:
-        funny_success_quotes = [
-            "🎉 বাহ্ বস! কোটিপতি হয়ে গেলা নাকি? তোমার উইথড্র রিকোয়েস্ট মহাশূন্যে পাঠিয়ে দেওয়া হয়েছে (টাকা জীবনেও পাবা না, জাস্ট মজা নিলাম)! 😎",
-            "🚀 উইথড্র সাকসেসফুল
+    while True:
+        try:
+            bot.infinity_polling(timeout=60, long_polling_timeout=60)
+        except Exception as e:
+            print(f"Polling error: {e}")
+            time.sleep(5)
