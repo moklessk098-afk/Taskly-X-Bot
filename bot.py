@@ -24,7 +24,7 @@ def run_web():
     app.run(host='0.0.0.0', port=port)
 
 TOKEN = '8812072288:AAFnZUlqS5P1jdXe79J8_ImULeo-yYUJqJo'
-CHANNEL_USERNAME = '@taandob7'
+CHANNEL_USERNAME = 'https://t.me/x_twitter_buysell'
 ADMIN_ID = 8702921423
 BOT_USERNAME = 'TasklyX_BD_Bot'
 
