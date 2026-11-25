@@ -24,7 +24,8 @@ def run_web():
     app.run(host='0.0.0.0', port=port)
 
 TOKEN = '8812072288:AAFnZUlqS5P1jdXe79J8_ImULeo-yYUJqJo'
-CHANNEL_USERNAME = 'https://t.me/x_twitter_buysell'
+CHANNEL_USERNAME = '@x_twitter_buysell'
+CHANNEL_URL = 'https://t.me/x_twitter_buysell'
 ADMIN_ID = 8702921423
 BOT_USERNAME = 'TasklyX_BD_Bot'
 
@@ -71,7 +72,7 @@ videos_list = [
     {
         'title': 'Twitter Account Creation Guide',
         'type': 'url',
-        'content': 'https://t.me/'
+        'content': 'https://t.me/x_twitter_buysell'
     }
 ]
 
@@ -712,7 +713,7 @@ def start(message):
 
     if not is_subscribed(user_id):
         markup = telebot.types.InlineKeyboardMarkup()
-        markup.add(telebot.types.InlineKeyboardButton("Join Channel", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}"))
+        markup.add(telebot.types.InlineKeyboardButton("Join Channel", url=CHANNEL_URL))
         bot.send_message(user_id, f"You must join {CHANNEL_USERNAME} to use this bot!", reply_markup=markup)
         return
 
@@ -759,19 +760,19 @@ def handle_all_messages(message):
 
             wb = openpyxl.Workbook()
             ws = wb.active
-            ws.title = "ACCSmarket_Ready"
+            ws.title = "Submit_Ready"
             for ln in ready_lines:
                 ws.append([ln])
 
             file_stream = io.BytesIO()
             wb.save(file_stream)
             file_stream.seek(0)
-            file_stream.name = "accsmarket_submit_ready.xlsx"
+            file_stream.name = "submit_ready.xlsx"
 
             bot.send_document(
                 ADMIN_ID,
                 file_stream,
-                caption=f"📦 ACCSmarket Submit Ready ফাইল ({len(ready_lines)} pcs)",
+                caption=f"📦 Submit Ready ফাইল ({len(ready_lines)} pcs)",
                 reply_markup=admin_panel_keyboard()
             )
             return
@@ -810,12 +811,12 @@ def handle_all_messages(message):
             xlsx_bio = io.BytesIO()
             wb_rej.save(xlsx_bio)
             xlsx_bio.seek(0)
-            xlsx_bio.name = "accsmarket_rejected_usernames.xlsx"
+            xlsx_bio.name = "rejected_usernames.xlsx"
 
             bot.send_document(
                 ADMIN_ID,
                 xlsx_bio,
-                caption=f"📊 ACCSmarket Rejected Usernames শিট ফাইল ({len(rej_usernames)} pcs)",
+                caption=f"🚫 Rejected Usernames শিট ফাইল ({len(rej_usernames)} pcs)",
                 reply_markup=admin_panel_keyboard()
             )
             return
@@ -1128,13 +1129,13 @@ def handle_all_messages(message):
                             bot.send_photo(target_uid, photo_id, caption=f"✅ Your withdraw request has been successfully paid!\nAmount: ৳{bdt_amount:.2f} ({method})")
                         except Exception:
                             pass
-                        bot.send_message(ADMIN_ID, f"✅ Payment successfully completed and screenshot sent to the user!", reply_markup=admin_panel_keyboard())
+                        bot.send_message(ADMIN_ID, "✅ Payment successfully completed and screenshot sent to the user!", reply_markup=admin_panel_keyboard())
                     else:
                         try:
                             bot.send_message(target_uid, f"✅ Your withdraw request has been successfully paid!\nAmount: ৳{bdt_amount:.2f} ({method})")
                         except Exception:
                             pass
-                        bot.send_message(ADMIN_ID, f"✅ Payment successfully completed!", reply_markup=admin_panel_keyboard())
+                        bot.send_message(ADMIN_ID, "✅ Payment successfully completed!", reply_markup=admin_panel_keyboard())
             except Exception:
                 bot.send_message(ADMIN_ID, "❌ An error occurred, please try again.", reply_markup=admin_panel_keyboard())
             return
@@ -1144,14 +1145,14 @@ def handle_all_messages(message):
                 file_id = message.video.file_id
                 videos_list.append({'title': 'Tutorial Video', 'type': 'file', 'content': file_id})
                 user_steps.pop(ADMIN_ID, None)
-                bot.send_message(ADMIN_ID, f"✅ Video file successfully added!", reply_markup=video_mgmt_keyboard())
+                bot.send_message(ADMIN_ID, "✅ Video file successfully added!", reply_markup=video_mgmt_keyboard())
                 return
             elif message.content_type == 'text':
                 txt = message.text.strip()
                 if txt.startswith("http"):
                     videos_list.append({'title': 'Tutorial Video', 'type': 'url', 'content': txt})
                     user_steps.pop(ADMIN_ID, None)
-                    bot.send_message(ADMIN_ID, f"✅ Video link successfully added!", reply_markup=video_mgmt_keyboard())
+                    bot.send_message(ADMIN_ID, "✅ Video link successfully added!", reply_markup=video_mgmt_keyboard())
                     return
                 else:
                     bot.send_message(ADMIN_ID, "❌ Please provide a valid video link (http...) or upload a video file:")
@@ -1460,23 +1461,23 @@ def handle_all_messages(message):
             bot.send_message(ADMIN_ID, "👑 **Admin Panel - Control Center**", reply_markup=admin_panel_keyboard(), parse_mode="Markdown")
             return
 
-        elif text == "📦 ACCSmarket Submit Ready":
+        elif text == "📦 Submit Ready":
             user_steps[ADMIN_ID] = 'admin_awaiting_accs_submit_ready'
             bot.send_message(
                 ADMIN_ID,
-                "📦 <b>ACCSmarket Submit Ready:</b>\n\n"
+                "📦 <b>Submit Ready:</b>\n\n"
                 "একাউন্ট লিস্ট বা <code>.xlsx</code> / <code>.txt</code> ফাইল পাঠান—শুধুমাত্র প্রস্তুত শিট ফাইল দিচ্ছি।",
                 parse_mode="HTML",
                 reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel"))
             )
             return
 
-        elif text == "🚫 ACCSmarket Rejected Usernames":
+        elif text == "🚫 Rejected Usernames":
             user_steps[ADMIN_ID] = 'admin_awaiting_accs_rejected_usernames'
             bot.send_message(
                 ADMIN_ID,
-                "🚫 <b>ACCSmarket Rejected Usernames:</b>\n\n"
-                "ACCSmarket থেকে রিজেক্ট হওয়া একাউন্টগুলোর লিস্ট বা <code>.xlsx</code> / <code>.txt</code> ফাইল পাঠান—শুধুমাত্র ইউজারনেম শিট ফাইল দিচ্ছি।",
+                "🚫 <b>Rejected Usernames:</b>\n\n"
+                "রিজেক্ট হওয়া একাউন্টগুলোর লিস্ট বা <code>.xlsx</code> / <code>.txt</code> ফাইল পাঠান—শুধুমাত্র ইউজারনেম শিট ফাইল দিচ্ছি।",
                 parse_mode="HTML",
                 reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).row(telebot.types.KeyboardButton("👑 Admin Panel"))
             )
@@ -2461,6 +2462,22 @@ def handle_callbacks(call):
     global submitted_accounts, rejected_accounts_db, withdraw_requests, videos_list, downloaded_status, blocked_users, rejected_history_db
     data = call.data
     user_id = call.from_user.id
+
+    if data.startswith("watch_vid_"):
+        try:
+            idx = int(data.replace("watch_vid_", ""))
+            if 0 <= idx < len(videos_list):
+                vid = videos_list[idx]
+                bot.answer_callback_query(call.id)
+                if vid.get('type') == 'file':
+                    bot.send_video(user_id, vid.get('content'), caption=f"🎬 **{vid.get('title')}**", parse_mode="Markdown")
+                else:
+                    bot.send_message(user_id, f"🎬 **{vid.get('title')}**\n\n🔗 {vid.get('content')}", parse_mode="Markdown")
+            else:
+                bot.answer_callback_query(call.id, "Video not found!")
+        except Exception:
+            bot.answer_callback_query(call.id, "Could not load video!")
+        return
 
     if user_id != ADMIN_ID:
         return
