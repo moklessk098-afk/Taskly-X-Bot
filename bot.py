@@ -149,7 +149,7 @@ def admin_panel_keyboard():
     markup.row(telebot.types.KeyboardButton("🎬 Video Management"), telebot.types.KeyboardButton("📊 Task 1 Excel"))
     markup.row(telebot.types.KeyboardButton("📊 Task 2 Excel (2FA)"), telebot.types.KeyboardButton("🔍 Check Accounts via Username"))
     markup.row(telebot.types.KeyboardButton("📥 Custom Username Check"), telebot.types.KeyboardButton("📊 Database Stats"))
-    markup.row(telebot.types.KeyboardButton("📦 ACCSmarket Submit Ready"), telebot.types.KeyboardButton("🚫 ACCSmarket Rejected Usernames"))
+    markup.row(telebot.types.KeyboardButton("📦 Submit Ready"), telebot.types.KeyboardButton("🚫 Rejected Usernames"))
     markup.row(telebot.types.KeyboardButton("🏠 Main Menu"))
     return markup
 
